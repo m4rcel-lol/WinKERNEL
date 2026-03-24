@@ -10,6 +10,9 @@
 #include <kernel/bsod.h>
 #include <kernel/shell.h>
 #include <kernel/rtl.h>
+#include <kernel/pci.h>
+#include <kernel/net.h>
+#include <kernel/gfx.h>
 #include <ntdef.h>
 #include <ntstatus.h>
 #include <limine.h>
@@ -122,7 +125,17 @@ void KiSystemStartup(void) {
     /* n. Process Manager */
     _PrintStatus("Starting Process Manager...", NT_SUCCESS(PsInitializeProcessManager()));
 
-    /* o. Enable interrupts */
+    /* o. PCI bus */
+    _PrintStatus("Scanning PCI bus...", NT_SUCCESS(PciInitialize()));
+
+    /* p. Network (RTL8139) */
+    NTSTATUS net_st = NetInitialize();
+    _PrintStatus("Initializing network adapter (RTL8139)...", NT_SUCCESS(net_st));
+
+    /* q. Graphics subsystem */
+    _PrintStatus("Initializing graphics subsystem...", NT_SUCCESS(GfxInitialize()));
+
+    /* r. Enable interrupts */
     __asm__ volatile ("sti");
     _PrintStatus("Enabling interrupts...", TRUE);
 

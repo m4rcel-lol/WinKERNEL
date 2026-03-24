@@ -8,6 +8,8 @@
 #include <kernel/rtl.h>
 #include <kernel/bsod.h>
 #include <kernel/ps.h>
+#include <kernel/net.h>
+#include <kernel/gfx.h>
 #include <ntdef.h>
 #include <ntstatus.h>
 
@@ -15,6 +17,7 @@
 static const CHAR* g_Commands[] = {
     "help", "cls", "echo", "ver", "mem", "sysinfo",
     "time", "set", "dir", "crash", "reboot", "shutdown", "color",
+    "net", "netping", "gfxtest",
     NULL
 };
 
@@ -248,6 +251,9 @@ static VOID _CmdHelp(VOID) {
     KdPrint("reboot            Restarts the system.\n");
     KdPrint("shutdown          Powers off the system.\n");
     KdPrint("color [attr]      Changes console colors (e.g. color 0A).\n");
+    KdPrint("net               Displays network adapter status and MAC address.\n");
+    KdPrint("netping           Sends a raw ARP probe to test the Tx path.\n");
+    KdPrint("gfxtest           Displays color bars to test the framebuffer.\n");
     KdPrint("\n");
 }
 
@@ -437,6 +443,80 @@ static VOID _CmdColor(PCSTR Args) {
     KdClearScreen();
 }
 
+/* ── _CmdNet ────────────────────────────────────────────────────────────── */
+static VOID _CmdNet(VOID) {
+    NetPrintStatus();
+}
+
+/* ── _CmdNetping ────────────────────────────────────────────────────────── */
+static VOID _CmdNetping(VOID) {
+    if (!NetIsAvailable()) {
+        KdPrintColor("No network adapter available.\n", CON_RED, CON_BLACK);
+        return;
+    }
+
+    /* Build a minimal ARP request (28 bytes) inside an Ethernet frame */
+    BYTE frame[60];
+    RtlZeroMemory(frame, sizeof(frame));
+
+    MAC_ADDR src;
+    NetGetMac(&src);
+
+    /* Ethernet header: broadcast dst, our src, EtherType ARP */
+    for (BYTE i = 0; i < ETH_ALEN; i++) frame[i] = 0xFF;           /* dst: broadcast */
+    for (BYTE i = 0; i < ETH_ALEN; i++) frame[6 + i] = src.b[i];  /* src: our MAC   */
+    frame[12] = 0x08; frame[13] = 0x06;                             /* EtherType: ARP */
+
+    /* ARP payload */
+    BYTE* arp = frame + 14;
+    arp[0] = 0x00; arp[1] = 0x01;  /* HTYPE: Ethernet */
+    arp[2] = 0x08; arp[3] = 0x00;  /* PTYPE: IPv4     */
+    arp[4] = 6;                     /* HLEN            */
+    arp[5] = 4;                     /* PLEN            */
+    arp[6] = 0x00; arp[7] = 0x01;  /* OPER: request   */
+    for (BYTE i = 0; i < ETH_ALEN; i++) arp[8  + i] = src.b[i];   /* sender MAC */
+    /* sender IP: 0.0.0.0 (probe) */
+    /* target MAC: 00:00:00:00:00:00 */
+    /* target IP: 192.168.1.1 */
+    arp[28] = 192; arp[29] = 168; arp[30] = 1; arp[31] = 1;
+
+    NTSTATUS st = NetSendFrame(frame, 60);
+    if (NT_SUCCESS(st)) {
+        KdPrintColor("ARP probe sent successfully.\n", CON_GREEN, CON_BLACK);
+    } else {
+        KdPrintColor("Failed to send ARP probe.\n", CON_RED, CON_BLACK);
+    }
+}
+
+/* ── _CmdGfxtest ────────────────────────────────────────────────────────── */
+static VOID _CmdGfxtest(VOID) {
+    GFX_MODE mode;
+    GfxGetMode(&mode);
+    if (!mode.Framebuffer) {
+        KdPrintColor("No framebuffer available.\n", CON_RED, CON_BLACK);
+        return;
+    }
+
+    /* Draw 8 vertical color bars */
+    static const DWORD colors[8] = {
+        GFX_WHITE, GFX_YELLOW, GFX_CYAN, GFX_GREEN,
+        GFX_MAGENTA, GFX_RED, GFX_BLUE, GFX_BLACK
+    };
+
+    DWORD bar_w = mode.Width / 8;
+    for (DWORD i = 0; i < 8; i++) {
+        GfxFillRect(i * bar_w, 0, bar_w, mode.Height, colors[i]);
+    }
+
+    /* Wait for a keypress then restore terminal */
+    KdPrint("\nPress any key to return...");
+    IoKeyboardGetChar();
+
+    /* Restore black screen and reprint prompt area */
+    GfxFillScreen(GFX_BLACK);
+    KdClearScreen();
+}
+
 /* ── _ShellExecute ──────────────────────────────────────────────────────── */
 static VOID _ShellExecute(PCSTR Line) {
     /* Skip leading spaces */
@@ -480,6 +560,12 @@ static VOID _ShellExecute(PCSTR Line) {
         _CmdShutdown();
     } else if (RtlCompareString(cmd, "color") == 0) {
         _CmdColor(args);
+    } else if (RtlCompareString(cmd, "net") == 0) {
+        _CmdNet();
+    } else if (RtlCompareString(cmd, "netping") == 0) {
+        _CmdNetping();
+    } else if (RtlCompareString(cmd, "gfxtest") == 0) {
+        _CmdGfxtest();
     } else {
         KdPrintf("'%s' is not recognized as an internal command.\n", cmd);
         KdPrint("Type 'help' for a list of commands.\n");

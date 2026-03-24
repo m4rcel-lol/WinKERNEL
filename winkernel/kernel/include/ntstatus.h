@@ -27,6 +27,9 @@
 #define STATUS_ALREADY_EXISTS               ((NTSTATUS)0xC0000035)
 #define STATUS_END_OF_FILE                  ((NTSTATUS)0xC0000011)
 #define STATUS_HEAP_CORRUPTION              ((NTSTATUS)0xC0000374)
+#define STATUS_TIMEOUT                      ((NTSTATUS)0xC0000102)
+#define STATUS_DEVICE_NOT_CONNECTED         ((NTSTATUS)0xC000009D)
+#define STATUS_DEVICE_CONFIGURATION_ERROR   ((NTSTATUS)0xC0000182)
 
 /* ── NT_SUCCESS macro ───────────────────────────────────────────────────── */
 #define NT_SUCCESS(status)      (((NTSTATUS)(status)) < 0x80000000)

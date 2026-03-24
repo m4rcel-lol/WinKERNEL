@@ -1,4 +1,4 @@
-; WinKernel NTKRNL-X — IDT stub trampolines (64-bit, NASM Intel syntax)
+; WinKernel NTKRNL-X — IDT stubs + common handler (NASM, 64-bit)
 
 bits 64
 default rel
@@ -8,33 +8,23 @@ global _IsrStubTable
 
 extern KiCommonHandler
 
-; ── _IdtFlush(rdi = &IDT_POINTER) ────────────────────────────────────────────
+; ── Load IDT ─────────────────────────────────────────────────────────────────
 _IdtFlush:
     lidt [rdi]
     ret
 
 ; ── Stub macros ───────────────────────────────────────────────────────────────
-; For exceptions WITHOUT a CPU-pushed error code: push 0 first, then vector.
-; For exceptions WITH    a CPU-pushed error code: just push vector.
-; After the stub the stack looks like:
-;   [rsp+ 0]  vector
-;   [rsp+ 8]  error code  (0 or CPU-pushed)
-;   [rsp+16]  RIP   \
-;   [rsp+24]  CS     |  CPU-pushed interrupt frame
-;   [rsp+32]  RFLAGS |
-;   [rsp+40]  RSP   /  (only present on privilege change; same-ring: absent)
-;   [rsp+48]  SS
-
 %macro ISR_NOERR 1
 isr_stub_%1:
-    push qword 0
-    push qword %1
+    push qword 0        ; fake error code
+    push qword %1       ; vector number
     jmp  _isr_common
 %endmacro
 
 %macro ISR_ERR 1
 isr_stub_%1:
-    push qword %1
+    ; CPU already pushed error code
+    push qword %1       ; vector number
     jmp  _isr_common
 %endmacro
 
@@ -79,7 +69,7 @@ ISR_NOERR i
 %assign i i+1
 %endrep
 
-; ── Remaining vectors 48-255 ─────────────────────────────────────────────────
+; ── Vectors 48-255 ───────────────────────────────────────────────────────────
 %assign i 48
 %rep 208
 ISR_NOERR i
@@ -87,15 +77,19 @@ ISR_NOERR i
 %endrep
 
 ; ── Common handler ────────────────────────────────────────────────────────────
-; KTRAP_FRAME C struct layout (first field = lowest address = top of stack):
-;   R15 R14 R13 R12 R11 R10 R9 R8  RBP RDI RSI RDX RCX RBX RAX
-;   InterruptNumber  ErrorCode
-;   RIP  CS  RFLAGS  RSP  SS        <- CPU-pushed
+; Stack layout on entry (rsp points at vector number):
+;   [rsp+ 0]  vector
+;   [rsp+ 8]  error code
+;   [rsp+16]  RIP    \
+;   [rsp+24]  CS      | CPU frame
+;   [rsp+32]  RFLAGS /
+;   (RSP/SS only present on privilege change — we stay in ring 0)
 ;
-; We push GPRs in the order that matches the struct (R15 first = top of stack).
+; KTRAP_FRAME C layout (first field = lowest address after all pushes):
+;   R15 R14 R13 R12 R11 R10 R9 R8 RBP RDI RSI RDX RCX RBX RAX
+;   InterruptNumber ErrorCode RIP CS RFLAGS RSP SS
 
 _isr_common:
-    ; Save all GPRs — order must match KTRAP_FRAME exactly
     push r15
     push r14
     push r13
@@ -112,16 +106,15 @@ _isr_common:
     push rbx
     push rax
 
-    ; rsp now points to the base of KTRAP_FRAME — pass as first arg
+    ; First arg = pointer to KTRAP_FRAME
     mov  rdi, rsp
 
-    ; System V AMD64 ABI requires 16-byte stack alignment before call.
-    ; We have pushed 15 GPRs (15*8=120) + vector + errcode (2*8=16) = 136 bytes
-    ; plus the CPU frame (5*8=40) = 176 bytes total.
-    ; 176 % 16 = 0, so we are already aligned. Just call directly.
+    ; Align stack to 16 bytes for ABI compliance
+    ; We pushed 15 regs (120 bytes) + vector + errcode (16) = 136 bytes
+    ; CPU pushed RIP+CS+RFLAGS = 24 bytes (same ring, no RSP/SS)
+    ; Total = 160 bytes. 160 % 16 = 0. Already aligned.
     call KiCommonHandler
 
-    ; Restore GPRs
     pop rax
     pop rbx
     pop rcx
@@ -138,13 +131,11 @@ _isr_common:
     pop r14
     pop r15
 
-    ; Discard vector number and error code
-    add rsp, 16
-
+    add rsp, 16     ; discard vector + error code
     iretq
 
-; ── Stub address table ────────────────────────────────────────────────────────
-section .rodata
+; ── Stub pointer table (in .data so it gets the kernel's virtual address) ────
+section .data
 _IsrStubTable:
 %assign i 0
 %rep 256

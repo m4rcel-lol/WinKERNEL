@@ -84,6 +84,7 @@ NTSTATUS    KeInitializeGdt(VOID);
 NTSTATUS    KeInitializeIdt(VOID);
 VOID        KiTrapHandler(PKTRAP_FRAME Frame);
 VOID        KiIsrDispatch(PKTRAP_FRAME Frame);
+VOID        KiCommonHandler(PKTRAP_FRAME Frame);
 
 /* ── IRQ handler registration ───────────────────────────────────────────── */
 typedef VOID (*KIRQ_HANDLER)(PVOID Frame);

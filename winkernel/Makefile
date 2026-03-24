@@ -59,6 +59,7 @@ C_SOURCES := \
     $(SRC_DIR)/hal/hal.c \
     $(SRC_DIR)/hal/pic.c \
     $(SRC_DIR)/hal/timer.c \
+    $(SRC_DIR)/hal/pci.c \
     $(SRC_DIR)/ke/gdt.c \
     $(SRC_DIR)/ke/idt.c \
     $(SRC_DIR)/ke/isr.c \
@@ -69,6 +70,8 @@ C_SOURCES := \
     $(SRC_DIR)/io/io.c \
     $(SRC_DIR)/io/keyboard.c \
     $(SRC_DIR)/ps/ps.c \
+    $(SRC_DIR)/net/rtl8139.c \
+    $(SRC_DIR)/gfx/gfx.c \
     $(SRC_DIR)/rtl/string.c \
     $(SRC_DIR)/rtl/printf.c
 
