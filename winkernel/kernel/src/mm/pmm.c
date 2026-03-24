@@ -21,7 +21,7 @@ static volatile struct limine_hhdm_request hhdm_request = {
 };
 
 /* ── PMM state ──────────────────────────────────────────────────────────── */
-#define PMM_BITMAP_MAX_FRAMES   (512 * 1024)   /* supports up to 2 GB */
+#define PMM_BITMAP_MAX_FRAMES   (64ULL * 1024 * 1024 * 1024 / PAGE_SIZE) /* 64 GB */
 
 static BYTE     g_Bitmap[PMM_BITMAP_MAX_FRAMES / 8];
 static QWORD    g_TotalFrames   = 0;

@@ -17,7 +17,7 @@
 static const CHAR* g_Commands[] = {
     "help", "cls", "echo", "ver", "mem", "sysinfo",
     "time", "set", "dir", "crash", "reboot", "shutdown", "color",
-    "net", "netping", "gfxtest", "drivers",
+    "net", "netping", "gfxtest", "drivers", "fetch",
     NULL
 };
 
@@ -120,7 +120,7 @@ VOID Shell_Run(VOID) {
             KEY_EVENT ev;
             /* hlt until an IRQ wakes us — much better than spinning */
             while (!IoKeyboardReadEvent(&ev)) {
-                __asm__ volatile ("hlt");
+                __asm__ volatile ("pause");
             }
             if (ev.Released) continue;
 
@@ -255,6 +255,7 @@ static VOID _CmdHelp(VOID) {
     KdPrint("netping           Sends a raw ARP probe to test the Tx path.\n");
     KdPrint("gfxtest           Displays color bars to test the framebuffer.\n");
     KdPrint("drivers           Lists boot-loaded kernel drivers.\n");
+    KdPrint("fetch             Prints system summary (fastfetch-style).\n");
     KdPrint("\n");
 }
 
@@ -534,6 +535,38 @@ static VOID _CmdDrivers(VOID) {
     KdPrint("\n");
 }
 
+/* ── _CmdFetch ──────────────────────────────────────────────────────────── */
+static VOID _CmdFetch(VOID) {
+    QWORD total_mb = MmGetTotalBytes() / (1024 * 1024);
+    QWORD avail_mb = MmGetAvailableBytes() / (1024 * 1024);
+    QWORD uptime   = HalGetUptimeSeconds();
+    QWORD h = uptime / 3600;
+    QWORD m = (uptime % 3600) / 60;
+    QWORD s = uptime % 60;
+
+    CHAR net_line[64];
+    if (NetIsAvailable()) {
+        RtlCopyString(net_line, "RTL8139 (up)", sizeof(net_line));
+    } else {
+        RtlCopyString(net_line, "Offline (no supported NIC)", sizeof(net_line));
+    }
+
+    KdPrintColor("      _       _  __           _\n", CON_CYAN, CON_BLACK);
+    KdPrintColor(" __ _| | ___ (_)/ /___ _ __  | |_\n", CON_CYAN, CON_BLACK);
+    KdPrintColor("/ _` | |/ _ \\| | '_/ _ \\ '__| | __|\n", CON_CYAN, CON_BLACK);
+    KdPrintColor("| (_| | | (_) | | . \\  __/ |    | |_\n", CON_CYAN, CON_BLACK);
+    KdPrintColor(" \\__,_|_|\\___/|_|_|\\_\\___|_|     \\__|\n\n", CON_CYAN, CON_BLACK);
+
+    KdPrintfColor(CON_WHITE, CON_BLACK, " OS      : WinKernel NTKRNL-X v0.1.0\n");
+    KdPrintfColor(CON_WHITE, CON_BLACK, " Host    : x86_64 UEFI\n");
+    KdPrintfColor(CON_WHITE, CON_BLACK, " CPU     : %s\n", HalCpuInfo.BrandString);
+    KdPrintfColor(CON_WHITE, CON_BLACK, " Cores   : %u logical\n", HalCpuInfo.LogicalCpuCount);
+    KdPrintfColor(CON_WHITE, CON_BLACK, " Memory  : %llu MB / %llu MB free\n", avail_mb, total_mb);
+    KdPrintfColor(CON_WHITE, CON_BLACK, " Uptime  : %llu:%02llu:%02llu\n", h, m, s);
+    KdPrintfColor(CON_WHITE, CON_BLACK, " Network : %s\n", net_line);
+    KdPrintfColor(CON_WHITE, CON_BLACK, " Drivers : %u loaded\n\n", IoGetLoadedDriverCount());
+}
+
 /* ── _ShellExecute ──────────────────────────────────────────────────────── */
 static VOID _ShellExecute(PCSTR Line) {
     /* Skip leading spaces */
@@ -585,6 +618,8 @@ static VOID _ShellExecute(PCSTR Line) {
         _CmdGfxtest();
     } else if (RtlCompareString(cmd, "drivers") == 0) {
         _CmdDrivers();
+    } else if (RtlCompareString(cmd, "fetch") == 0) {
+        _CmdFetch();
     } else {
         KdPrintf("'%s' is not recognized as an internal command.\n", cmd);
         KdPrint("Type 'help' for a list of commands.\n");

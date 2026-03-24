@@ -60,11 +60,7 @@ static VOID _KbEnqueue(BYTE Scancode, CHAR Ascii, BOOL Released) {
     g_QueueTail = next;
 }
 
-/* ── _KbIrqHandler — called from KiIsrDispatch for IRQ1 ────────────────── */
-static VOID _KbIrqHandler(PVOID Frame) {
-    (VOID)Frame;
-
-    BYTE sc = HalReadPortByte(PS2_DATA);
+static VOID _KbProcessScancode(BYTE sc) {
     BOOL released = (sc & SC_RELEASE) ? TRUE : FALSE;
     BYTE raw = sc & 0x7F;
 
@@ -99,6 +95,12 @@ static VOID _KbIrqHandler(PVOID Frame) {
     _KbEnqueue(raw, ascii, FALSE);
 }
 
+/* ── _KbIrqHandler — called from KiIsrDispatch for IRQ1 ────────────────── */
+static VOID _KbIrqHandler(PVOID Frame) {
+    (VOID)Frame;
+    _KbProcessScancode(HalReadPortByte(PS2_DATA));
+}
+
 /* ── IoConnectKeyboard ──────────────────────────────────────────────────── */
 
 NTSTATUS IoConnectKeyboard(VOID) {
@@ -125,6 +127,14 @@ NTSTATUS IoConnectKeyboard(VOID) {
 /* ── IoKeyboardReadEvent ────────────────────────────────────────────────── */
 
 BOOL IoKeyboardReadEvent(PKEY_EVENT Event) {
+    if (!Event) return FALSE;
+
+    /* Fallback polling path: if IRQ delivery is broken, still parse queued
+       bytes from i8042 data port so shell input does not hard-freeze. */
+    if (g_QueueHead == g_QueueTail && (HalReadPortByte(PS2_STATUS) & 0x01)) {
+        _KbProcessScancode(HalReadPortByte(PS2_DATA));
+    }
+
     if (g_QueueHead == g_QueueTail) return FALSE;
 
     *Event = g_KeyQueue[g_QueueHead];
@@ -144,7 +154,7 @@ CHAR IoKeyboardGetChar(VOID) {
     KEY_EVENT ev;
     while (TRUE) {
         while (!IoKeyboardReadEvent(&ev)) {
-            __asm__ volatile ("hlt");
+            __asm__ volatile ("pause");
         }
         if (!ev.Released && ev.Ascii != 0) return ev.Ascii;
         if (!ev.Released && (ev.Ascii == '\b' || ev.Ascii == '\n')) return ev.Ascii;

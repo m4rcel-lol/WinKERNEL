@@ -144,7 +144,7 @@ NTSTATUS NetInitialize(VOID) {
     /* Find RTL8139 on PCI bus */
     PCI_DEVICE dev;
     if (!PciFindDevice(RTL8139_VENDOR, RTL8139_DEVICE, &dev)) {
-        return STATUS_DEVICE_NOT_CONNECTED;
+        return STATUS_SUCCESS; /* Optional device: continue boot without NIC */
     }
 
     /* Get I/O BAR0 (bit 0 = I/O space indicator, mask it off) */
@@ -199,11 +199,12 @@ NTSTATUS NetInitialize(VOID) {
     /* Enable Rx OK + Tx OK interrupts */
     _NicWrite16(RTL_IMR, INT_ROK | INT_TOK | INT_RER | INT_TER);
 
-    /* Register IRQ handler and unmask */
-    KeRegisterIrqHandler(g_Nic.Irq, _NicIrqHandler);
-    HalPicUnmaskIrq(g_Nic.Irq);
-    /* IRQ >= 8 needs cascade (IRQ2) unmasked too */
-    if (g_Nic.Irq >= 8) HalPicUnmaskIrq(2);
+    /* Register IRQ handler only for legacy PIC-routable IRQs (0..15). */
+    if (g_Nic.Irq < 16) {
+        KeRegisterIrqHandler(g_Nic.Irq, _NicIrqHandler);
+        HalPicUnmaskIrq(g_Nic.Irq);
+        if (g_Nic.Irq >= 8) HalPicUnmaskIrq(2); /* slave PIC cascade */
+    }
 
     g_Nic.RxOffset  = 0;
     g_Nic.TxCurrent = 0;
