@@ -1,0 +1,107 @@
+name: Build WinKernel ISO
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y \
+            build-essential \
+            nasm \
+            xorriso \
+            mtools \
+            wget \
+            git \
+            curl
+
+      - name: Cache cross-compiler
+        id: cache-cross
+        uses: actions/cache@v4
+        with:
+          path: ~/opt/cross
+          key: x86_64-elf-gcc-13.2.0-binutils-2.41
+
+      - name: Build cross-compiler
+        if: steps.cache-cross.outputs.cache-hit != 'true'
+        run: |
+          export PREFIX="$HOME/opt/cross"
+          export TARGET=x86_64-elf
+          mkdir -p "$HOME/src" "$PREFIX"
+          cd "$HOME/src"
+
+          # binutils
+          wget -q https://ftp.gnu.org/gnu/binutils/binutils-2.41.tar.gz
+          tar -xf binutils-2.41.tar.gz
+          mkdir build-binutils && cd build-binutils
+          ../binutils-2.41/configure \
+            --target=$TARGET --prefix="$PREFIX" \
+            --with-sysroot --disable-nls --disable-werror
+          make -j$(nproc)
+          make install
+          cd ..
+
+          # GCC
+          wget -q https://ftp.gnu.org/gnu/gcc/gcc-13.2.0/gcc-13.2.0.tar.gz
+          tar -xf gcc-13.2.0.tar.gz
+          cd gcc-13.2.0 && contrib/download_prerequisites && cd ..
+          mkdir build-gcc && cd build-gcc
+          ../gcc-13.2.0/configure \
+            --target=$TARGET --prefix="$PREFIX" \
+            --disable-nls --enable-languages=c \
+            --without-headers
+          make -j$(nproc) all-gcc all-target-libgcc
+          make install-gcc install-target-libgcc
+
+      - name: Download Limine bootloader
+        run: |
+          git clone --depth=1 --branch v8.x-binary \
+            https://github.com/limine-bootloader/limine.git limine_bin
+          mkdir -p winkernel/limine
+          cp limine_bin/limine-bios.sys      winkernel/limine/
+          cp limine_bin/limine-bios-cd.bin   winkernel/limine/
+          cp limine_bin/limine-uefi-cd.bin   winkernel/limine/
+          cp limine_bin/BOOTX64.EFI          winkernel/limine/
+          cp limine_bin/limine               winkernel/limine/
+          chmod +x winkernel/limine/limine
+
+      - name: Build WinKernel ISO
+        run: |
+          export PATH="$HOME/opt/cross/bin:$PATH"
+          cd winkernel
+          make
+
+      - name: Upload ISO artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: winkernel-iso
+          path: winkernel/winkernel.iso
+          retention-days: 30
+
+      - name: Upload kernel ELF artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: winkernel-elf
+          path: winkernel/build/kernel.elf
+          retention-days: 30
+
+      - name: Create release on tag
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            winkernel/winkernel.iso
+            winkernel/build/kernel.elf
+          generate_release_notes: true
