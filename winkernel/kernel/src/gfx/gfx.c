@@ -6,17 +6,7 @@
 #include <kernel/io.h>
 #include <ntdef.h>
 #include <ntstatus.h>
-#include <limine.h>
-
-/* ── Limine framebuffer request (shared with terminal.c via separate req) ─ */
-/* We issue our own request; Limine deduplicates identical request IDs and
-   returns the same response to both. */
-__attribute__((used, section(".limine_requests")))
-static volatile struct limine_framebuffer_request gfx_fb_request = {
-    .id       = LIMINE_FRAMEBUFFER_REQUEST,
-    .revision = 0,
-    .response = NULL
-};
+#include <kernel/limine_fb.h>
 
 /* ── Driver state ───────────────────────────────────────────────────────── */
 static GFX_MODE g_Mode;
@@ -41,12 +31,13 @@ NTSTATUS GfxInitialize(VOID) {
     g_Ready = FALSE;
     g_FbBytes = NULL;
 
-    if (!gfx_fb_request.response ||
-        gfx_fb_request.response->framebuffer_count == 0) {
+    if (!g_LimineFramebufferRequest.response ||
+        g_LimineFramebufferRequest.response->framebuffer_count == 0) {
         return STATUS_DEVICE_NOT_CONNECTED;
     }
 
-    struct limine_framebuffer* fb = gfx_fb_request.response->framebuffers[0];
+    struct limine_framebuffer* fb =
+        g_LimineFramebufferRequest.response->framebuffers[0];
     g_Mode.Bpp = (DWORD)fb->bpp;
     if (g_Mode.Bpp != 32 && g_Mode.Bpp != 24) {
         return STATUS_NOT_IMPLEMENTED;

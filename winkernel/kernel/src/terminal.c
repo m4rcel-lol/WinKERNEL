@@ -5,11 +5,11 @@
 #include <kernel/rtl.h>
 #include <ntdef.h>
 #include <stdarg.h>
-#include <limine.h>
+#include <kernel/limine_fb.h>
 
-/* ── Limine framebuffer request ─────────────────────────────────────────── */
+/* ── Limine framebuffer request (shared with gfx.c) ─────────────────────── */
 __attribute__((used, section(".limine_requests")))
-static volatile struct limine_framebuffer_request fb_request = {
+volatile struct limine_framebuffer_request g_LimineFramebufferRequest = {
     .id       = LIMINE_FRAMEBUFFER_REQUEST,
     .revision = 0,
     .response = NULL
@@ -225,13 +225,15 @@ static VOID _DrawGlyph(DWORD Col, DWORD Row, CHAR c, BYTE Fg, BYTE Bg) {
 
 /* ── WinConsole_Init ────────────────────────────────────────────────────── */
 VOID WinConsole_Init(VOID) {
-    if (!fb_request.response || fb_request.response->framebuffer_count == 0) {
+    if (!g_LimineFramebufferRequest.response ||
+        g_LimineFramebufferRequest.response->framebuffer_count == 0) {
         /* No framebuffer — we cannot do anything */
         g_Con.Initialized = FALSE;
         return;
     }
 
-    struct limine_framebuffer* fb = fb_request.response->framebuffers[0];
+    struct limine_framebuffer* fb =
+        g_LimineFramebufferRequest.response->framebuffers[0];
     g_Con.Bpp = (DWORD)fb->bpp;
     if (g_Con.Bpp != 32 && g_Con.Bpp != 24) {
         g_Con.Initialized = FALSE;
