@@ -3,205 +3,203 @@
 #include <kernel/io.h>
 #include <kernel/ke.h>
 #include <kernel/hal.h>
-#include <kernel/serial.h>
+#include <kernel/bsod.h>
 #include <kernel/rtl.h>
 #include <ntdef.h>
 
 /* ── PS/2 ports ─────────────────────────────────────────────────────────── */
-#define PS2_DATA    0x60
-#define PS2_STATUS  0x64
+#define PS2_DATA        0x60
+#define PS2_STATUS      0x64
+#define PS2_STAT_OBF    0x01    /* output buffer full — data ready */
+#define PS2_STAT_IBF    0x02    /* input  buffer full — controller busy */
 
-/* ── Scancode → ASCII table (US QWERTY, set 1, unshifted) ──────────────── */
-static const CHAR g_ScancodeMap[128] = {
-    0,    0,   '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '=', '\b',
-    '\t', 'q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p', '[', ']', '\n',
-    0,    'a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l', ';', '\'', '`',
-    0,    '\\','z', 'x', 'c', 'v', 'b', 'n', 'm', ',', '.', '/', 0,
+/* ── Scancode set 1, US QWERTY ──────────────────────────────────────────── */
+static const CHAR g_Map[128] = {
+    0,    0,   '1', '2', '3', '4', '5', '6', '7', '8',
+    '9',  '0', '-', '=', '\b', '\t',
+    'q',  'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p', '[', ']', '\n',
+    0,
+    'a',  's', 'd', 'f', 'g', 'h', 'j', 'k', 'l', ';', '\'', '`',
+    0,    '\\', 'z', 'x', 'c', 'v', 'b', 'n', 'm', ',', '.', '/', 0,
     '*',  0,   ' ', 0,
-    /* F1–F10, num lock, scroll lock, home, up, pgup, -, left, 5, right, +,
-       end, down, pgdn, ins, del — all 0 for now */
-    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+    0,0,0,0,0,0,0,0,0,0,  /* F1-F10 */
+    0,0,                   /* num lock, scroll lock */
+    0,0,0,                 /* home, up, pgup */
+    '-',
+    0,0,0,                 /* left, 5, right */
+    '+',
+    0,0,0,                 /* end, down, pgdn */
+    0,0,                   /* ins, del */
+    0,0,0,0,0,             /* padding */
     0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
 };
 
-/* ── Shifted scancode map ───────────────────────────────────────────────── */
-static const CHAR g_ScancodeMapShift[128] = {
-    0,    0,   '!', '@', '#', '$', '%', '^', '&', '*', '(', ')', '_', '+', '\b',
-    '\t', 'Q', 'W', 'E', 'R', 'T', 'Y', 'U', 'I', 'O', 'P', '{', '}', '\n',
-    0,    'A', 'S', 'D', 'F', 'G', 'H', 'J', 'K', 'L', ':', '"', '~',
+static const CHAR g_MapShift[128] = {
+    0,    0,   '!', '@', '#', '$', '%', '^', '&', '*',
+    '(',  ')', '_', '+', '\b', '\t',
+    'Q',  'W', 'E', 'R', 'T', 'Y', 'U', 'I', 'O', 'P', '{', '}', '\n',
+    0,
+    'A',  'S', 'D', 'F', 'G', 'H', 'J', 'K', 'L', ':', '"', '~',
     0,    '|', 'Z', 'X', 'C', 'V', 'B', 'N', 'M', '<', '>', '?', 0,
     '*',  0,   ' ', 0,
-    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+    0,0,0,0,0,0,0,0,0,0,
+    0,0,
+    0,0,0,
+    '-',
+    0,0,0,
+    '+',
+    0,0,0,
+    0,0,
+    0,0,0,0,0,
     0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
 };
 
-/* ── Key event ring buffer ──────────────────────────────────────────────── */
-static KEY_EVENT g_KeyQueue[KB_QUEUE_SIZE];
-static volatile DWORD g_QueueHead = 0;
-static volatile DWORD g_QueueTail = 0;
+/* ── Ring buffer ────────────────────────────────────────────────────────── */
+static KEY_EVENT      g_Queue[KB_QUEUE_SIZE];
+static volatile DWORD g_Head = 0;
+static volatile DWORD g_Tail = 0;
 
 /* ── Modifier state ─────────────────────────────────────────────────────── */
-static volatile BOOL g_ShiftHeld  = FALSE;
-static volatile BOOL g_CapsLock   = FALSE;
+static volatile BOOL g_Shift   = FALSE;
+static volatile BOOL g_Caps    = FALSE;
 
-/* ── Special scancodes ──────────────────────────────────────────────────── */
-#define SC_LSHIFT   0x2A
-#define SC_RSHIFT   0x36
-#define SC_CAPS     0x3A
-#define SC_RELEASE  0x80    /* bit 7 set = key release */
+/* ── PS/2 present flag ──────────────────────────────────────────────────── */
+static BOOL g_Ps2Ok = FALSE;
 
-/* ── i8042 helpers ───────────────────────────────────────────────────── */
-static BOOL _WaitInputBufferEmpty(DWORD Attempts) {
-    while (Attempts--) {
-        /* Status bit1 = input buffer full */
-        if (!(HalReadPortByte(PS2_STATUS) & 0x02)) return TRUE;
-        __asm__ volatile ("pause");
-    }
-    return FALSE;
+#define SC_LSHIFT  0x2A
+#define SC_RSHIFT  0x36
+#define SC_CAPS    0x3A
+#define SC_BREAK   0x80
+
+/* ── _Enqueue ───────────────────────────────────────────────────────────── */
+static VOID _Enqueue(BYTE sc, CHAR ascii, BOOL released) {
+    DWORD next = (g_Tail + 1) % KB_QUEUE_SIZE;
+    if (next == g_Head) return;
+    g_Queue[g_Tail].Scancode = sc;
+    g_Queue[g_Tail].Ascii    = ascii;
+    g_Queue[g_Tail].Released = released;
+    g_Tail = next;
 }
 
-static BOOL _WaitOutputBufferFull(DWORD Attempts) {
-    while (Attempts--) {
-        /* Status bit0 = output buffer full */
-        if (HalReadPortByte(PS2_STATUS) & 0x01) return TRUE;
-        __asm__ volatile ("pause");
-    }
-    return FALSE;
-}
+/* ── _Process ───────────────────────────────────────────────────────────── */
+static VOID _Process(BYTE sc) {
+    /* 0x00 and 0xFF are PS/2 error/absent codes — discard */
+    if (sc == 0x00 || sc == 0xFF) return;
 
-static VOID _DrainPs2Loop(DWORD MaxBytes) {
-    while (MaxBytes--) {
-        if (!_WaitOutputBufferFull(2000)) return;
-        (VOID)HalReadPortByte(PS2_DATA);
-    }
-}
-
-/* ── _KbEnqueue ─────────────────────────────────────────────────────────── */
-static VOID _KbEnqueue(BYTE Scancode, CHAR Ascii, BOOL Released) {
-    DWORD next = (g_QueueTail + 1) % KB_QUEUE_SIZE;
-    if (next == g_QueueHead) return;    /* queue full, drop */
-
-    g_KeyQueue[g_QueueTail].Scancode = Scancode;
-    g_KeyQueue[g_QueueTail].Ascii    = Ascii;
-    g_KeyQueue[g_QueueTail].Released = Released;
-    g_QueueTail = next;
-}
-
-static VOID _KbProcessScancode(BYTE sc) {
-    BOOL released = (sc & SC_RELEASE) ? TRUE : FALSE;
+    BOOL released = (sc & SC_BREAK) ? TRUE : FALSE;
     BYTE raw = sc & 0x7F;
 
-    /* Handle modifiers */
-    if (raw == SC_LSHIFT || raw == SC_RSHIFT) {
-        g_ShiftHeld = !released;
-        return;
-    }
-    if (raw == SC_CAPS && !released) {
-        g_CapsLock = !g_CapsLock;
-        return;
-    }
+    if (raw == SC_LSHIFT || raw == SC_RSHIFT) { g_Shift = !released; return; }
+    if (raw == SC_CAPS && !released)           { g_Caps  = !g_Caps;  return; }
+    if (released) { _Enqueue(raw, 0, TRUE); return; }
 
-    if (released) {
-        _KbEnqueue(raw, 0, TRUE);
-        return;
-    }
+    CHAR ascii = g_Shift ? g_MapShift[raw] : g_Map[raw];
+    if (!g_Shift && g_Caps && ascii >= 'a' && ascii <= 'z')
+        ascii = (CHAR)(ascii - 32);
 
-    /* Translate scancode to ASCII */
-    CHAR ascii = 0;
-    if (raw < 128) {
-        if (g_ShiftHeld) {
-            ascii = g_ScancodeMapShift[raw];
-        } else {
-            ascii = g_ScancodeMap[raw];
-            /* Apply caps lock to letters */
-            if (g_CapsLock && ascii >= 'a' && ascii <= 'z')
-                ascii = (CHAR)(ascii - 32);
-        }
-    }
-
-    _KbEnqueue(raw, ascii, FALSE);
+    _Enqueue(raw, ascii, FALSE);
 }
 
-/* ── _KbIrqHandler — called from KiIsrDispatch for IRQ1 ────────────────── */
-static VOID _KbIrqHandler(PVOID Frame) {
+/* ── IRQ1 handler ───────────────────────────────────────────────────────── */
+static VOID _IrqHandler(PVOID Frame) {
     (VOID)Frame;
-    _KbProcessScancode(HalReadPortByte(PS2_DATA));
+    if (HalReadPortByte(PS2_STATUS) & PS2_STAT_OBF)
+        _Process(HalReadPortByte(PS2_DATA));
+}
+
+/* ── _Ps2WaitIn — wait for input buffer empty ───────────────────────────── */
+static BOOL _Ps2WaitIn(void) {
+    for (DWORD i = 0; i < 65536; i++) {
+        if (!(HalReadPortByte(PS2_STATUS) & PS2_STAT_IBF)) return TRUE;
+        __asm__ volatile ("pause");
+    }
+    return FALSE;
+}
+
+/* ── _Ps2WaitOut — wait for output buffer full ──────────────────────────── */
+static BOOL _Ps2WaitOut(void) {
+    for (DWORD i = 0; i < 65536; i++) {
+        if (HalReadPortByte(PS2_STATUS) & PS2_STAT_OBF) return TRUE;
+        __asm__ volatile ("pause");
+    }
+    return FALSE;
 }
 
 /* ── IoConnectKeyboard ──────────────────────────────────────────────────── */
-
 NTSTATUS IoConnectKeyboard(VOID) {
-    g_QueueHead = 0;
-    g_QueueTail = 0;
-    g_ShiftHeld = FALSE;
-    g_CapsLock  = FALSE;
+    g_Head  = 0;
+    g_Tail  = 0;
+    g_Shift = FALSE;
+    g_Caps  = FALSE;
+    g_Ps2Ok = FALSE;
 
-    /* Flush any stale byte sitting in the PS/2 buffer */
-    while (HalReadPortByte(PS2_STATUS) & 0x01)
+    /* Quick sanity check: if status port reads 0xFF the i8042 is absent.
+       This is a single read — no timeout loop, no freeze. */
+    BYTE status = HalReadPortByte(PS2_STATUS);
+    if (status == 0xFF) {
+        /* USB-only machine — register IRQ handler (harmless) and return OK.
+           Input will arrive via serial console. */
+        KeRegisterIrqHandler(1, _IrqHandler);
+        KePanicLog("PS/2: status=0xFF, no i8042 (USB-only machine)");
+        return STATUS_SUCCESS;
+    }
+
+    g_Ps2Ok = TRUE;
+    KePanicLog("PS/2: i8042 detected, status=0x%02x", (DWORD)status);
+
+    /* Drain any stale bytes */
+    for (DWORD i = 0; i < 16 && (HalReadPortByte(PS2_STATUS) & PS2_STAT_OBF); i++)
         HalReadPortByte(PS2_DATA);
 
-    KeRegisterIrqHandler(1, _KbIrqHandler);
+    /* Enable first PS/2 port (0xAE to command port) */
+    if (_Ps2WaitIn()) HalWritePortByte(PS2_STATUS, 0xAE);
 
-    /* Unmask IRQ1 (keyboard) and IRQ2 (cascade — required for slave PIC) */
+    /* Send "enable scanning" (0xF4) to keyboard device */
+    if (_Ps2WaitIn()) HalWritePortByte(PS2_DATA, 0xF4);
+
+    /* Consume ACK (0xFA) — don't block if it doesn't come */
+    if (_Ps2WaitOut()) HalReadPortByte(PS2_DATA);
+
+    KeRegisterIrqHandler(1, _IrqHandler);
     HalPicUnmaskIrq(1);
-    HalPicUnmaskIrq(2);
+    HalPicUnmaskIrq(2);  /* cascade — required for slave PIC */
 
-    /* Bring up keyboard: enable PS/2 port, then "enable scanning" (0xF4).
-       Note: 0xD1 is *wrong* here — it writes the controller output port (A20/reset),
-       not the keyboard. Keyboard commands go to 0x60 after the controller accepts. */
-    if (_WaitInputBufferEmpty(100000))
-        HalWritePortByte(PS2_STATUS, 0xAE); /* enable first PS/2 port */
-    _DrainPs2Loop(8);
-
-    if (_WaitInputBufferEmpty(100000))
-        HalWritePortByte(PS2_DATA, 0xF4); /* keyboard: enable scanning */
-    _DrainPs2Loop(8);
-
-    (VOID)IoRegisterLoadedDriver("PS/2 Keyboard (i8042prt)");
-
+    KePanicLog("PS/2: keyboard enabled, IRQ1 unmasked");
     return STATUS_SUCCESS;
 }
 
 /* ── IoKeyboardReadEvent ────────────────────────────────────────────────── */
-
 BOOL IoKeyboardReadEvent(PKEY_EVENT Event) {
     if (!Event) return FALSE;
 
-    /* Fallback polling path: if IRQ delivery is broken, still parse queued
-       bytes from i8042 data port so shell input does not hard-freeze. */
-    if (g_QueueHead == g_QueueTail && (HalReadPortByte(PS2_STATUS) & 0x01)) {
-        _KbProcessScancode(HalReadPortByte(PS2_DATA));
+    /* Polled fallback: only touch the data port when OBF is set.
+       Without this guard, USB-only machines return 0xFF on every read
+       and flood the queue with garbage. */
+    if (g_Ps2Ok && g_Head == g_Tail) {
+        if (HalReadPortByte(PS2_STATUS) & PS2_STAT_OBF)
+            _Process(HalReadPortByte(PS2_DATA));
     }
 
-    if (g_QueueHead == g_QueueTail) return FALSE;
+    if (g_Head == g_Tail) return FALSE;
 
-    *Event = g_KeyQueue[g_QueueHead];
-    g_QueueHead = (g_QueueHead + 1) % KB_QUEUE_SIZE;
+    *Event = g_Queue[g_Head];
+    g_Head = (g_Head + 1) % KB_QUEUE_SIZE;
     return TRUE;
 }
 
 /* ── IoKeyboardHasData ──────────────────────────────────────────────────── */
-
 BOOL IoKeyboardHasData(VOID) {
-    return g_QueueHead != g_QueueTail;
+    return g_Head != g_Tail;
 }
 
-/* ── IoKeyboardGetChar — blocking spin until printable key ──────────────── */
-
+/* ── IoKeyboardGetChar — blocking ───────────────────────────────────────── */
 CHAR IoKeyboardGetChar(VOID) {
     KEY_EVENT ev;
-    while (TRUE) {
-        while (!IoKeyboardReadEvent(&ev)) {
-            CHAR c;
-            if (IoSerialTryRead(&c)) {
-                if (c == '\r') return '\n';
-                if (c == '\x7F' || c == '\b') return '\b';
-                if (c >= 32 && c <= 126) return c;
-                continue;
-            }
-            __asm__ volatile ("pause");
-        }
-        if (!ev.Released && ev.Ascii != 0) return ev.Ascii;
-        if (!ev.Released && (ev.Ascii == '\b' || ev.Ascii == '\n')) return ev.Ascii;
+    for (;;) {
+        while (!IoConsoleReadEvent(&ev))
+            __asm__ volatile ("hlt");   /* sleep until next IRQ */
+        if (ev.Released) continue;
+        if (ev.Ascii == '\b' || ev.Ascii == '\n' || ev.Ascii == '\r') return ev.Ascii;
+        if (ev.Ascii >= 32 && (BYTE)ev.Ascii <= 126) return ev.Ascii;
     }
 }

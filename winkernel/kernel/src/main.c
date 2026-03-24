@@ -17,7 +17,6 @@
 #include <ntdef.h>
 #include <ntstatus.h>
 #include <limine.h>
-
 /* ── Limine base revision (required) ───────────────────────────────────── */
 __attribute__((used, section(".limine_requests")))
 static volatile QWORD limine_base_revision[3] = { 0xf9562b2d5c95a6c8, 0x6a7b384944536bdc, 2 };
@@ -36,44 +35,34 @@ static volatile QWORD limine_requests_end_marker[2] = {
 /* ── _PrintStatus — print "text ... [ DONE ]" ───────────────────────────── */
 static VOID _PrintStatus(PCSTR Text, BOOL Ok) {
     KdPrintColor(Text, CON_GREY, CON_BLACK);
-
-    /* Pad to column 50 */
     SIZE_T len = RtlStringLength(Text);
     for (SIZE_T i = len; i < 50; i++) KdPutChar(' ');
-
     if (Ok) {
         KdPrintColor("[ ", CON_GREY,  CON_BLACK);
         KdPrintColor("DONE", CON_GREEN, CON_BLACK);
         KdPrintColor(" ]\n", CON_GREY, CON_BLACK);
+        KePanicLog("OK   %s", Text);
     } else {
         KdPrintColor("[ ", CON_GREY, CON_BLACK);
         KdPrintColor("FAIL", CON_RED, CON_BLACK);
         KdPrintColor(" ]\n", CON_GREY, CON_BLACK);
+        KePanicLog("FAIL %s", Text);
     }
 }
 
 /* ── _PrintBanner ───────────────────────────────────────────────────────── */
 static VOID _PrintBanner(VOID) {
-    KdPrintColor("  \xDA\xC4\xC4\xC4\xC4\xC4\xC4\xC4\xC4\xC4\xC4\xC4\xC4\xC4\xC4\xC4\xC4\xC4\xC4\xC4\xC4\xC4\xC4\xC4\xC4\xC4\xC4\xC4\xC4\xC4\xC4\xC4\xC4\xC4\xC4\xC4\xC4\xC4\xC4\xC4\xC4\xC4\xC4\xC4\xC4\xC4\xC4\xC4\xC4\xC4\xBF\n",
-                 CON_GREY, CON_BLACK);
-    KdPrintColor("  \xB3                                                 \xB3\n", CON_GREY, CON_BLACK);
-    KdPrintColor("  \xB3", CON_GREY, CON_BLACK);
-    KdPrintColor("         WinKernel  v0.1.0  [x86_64 UEFI]        ", CON_WHITE, CON_BLACK);
-    KdPrintColor("\xB3\n", CON_GREY, CON_BLACK);
-    KdPrintColor("  \xB3", CON_GREY, CON_BLACK);
-    KdPrintColor("         NTKRNL-X Executive Loading...           ", CON_GREY, CON_BLACK);
-    KdPrintColor("\xB3\n", CON_GREY, CON_BLACK);
-    KdPrintColor("  \xB3                                                 \xB3\n", CON_GREY, CON_BLACK);
-    KdPrintColor("  \xB3", CON_GREY, CON_BLACK);
-    KdPrintColor("         Copyright (c) WinKernel Project         ", CON_DARK_GREY, CON_BLACK);
-    KdPrintColor("\xB3\n", CON_GREY, CON_BLACK);
-    KdPrintColor("  \xB3", CON_GREY, CON_BLACK);
-    KdPrintColor("         All rights reserved.                    ", CON_DARK_GREY, CON_BLACK);
-    KdPrintColor("\xB3\n", CON_GREY, CON_BLACK);
-    KdPrintColor("  \xB3                                                 \xB3\n", CON_GREY, CON_BLACK);
-    KdPrintColor("  \xC0\xC4\xC4\xC4\xC4\xC4\xC4\xC4\xC4\xC4\xC4\xC4\xC4\xC4\xC4\xC4\xC4\xC4\xC4\xC4\xC4\xC4\xC4\xC4\xC4\xC4\xC4\xC4\xC4\xC4\xC4\xC4\xC4\xC4\xC4\xC4\xC4\xC4\xC4\xC4\xC4\xC4\xC4\xC4\xC4\xC4\xC4\xC4\xC4\xC4\xD9\n",
-                 CON_GREY, CON_BLACK);
-    KdPrint("\n");
+    KdPrintColor("  +-----------------------------------------------+\n", CON_GREY,  CON_BLACK);
+    KdPrintColor("  |", CON_GREY, CON_BLACK);
+    KdPrintColor("      WinKernel  v0.1.0  [x86_64 UEFI]          ", CON_WHITE, CON_BLACK);
+    KdPrintColor("|\n", CON_GREY, CON_BLACK);
+    KdPrintColor("  |", CON_GREY, CON_BLACK);
+    KdPrintColor("      NTKRNL-X Executive Loading...              ", CON_GREY,  CON_BLACK);
+    KdPrintColor("|\n", CON_GREY, CON_BLACK);
+    KdPrintColor("  |", CON_GREY, CON_BLACK);
+    KdPrintColor("      Copyright (c) WinKernel Project            ", CON_DARK_GREY, CON_BLACK);
+    KdPrintColor("|\n", CON_GREY, CON_BLACK);
+    KdPrintColor("  +-----------------------------------------------+\n\n", CON_GREY, CON_BLACK);
 }
 
 /* ── KiSystemStartup ────────────────────────────────────────────────────── */
@@ -121,13 +110,17 @@ void KiSystemStartup(void) {
     _PrintStatus("Starting I/O Manager...", NT_SUCCESS(IoInitialize()));
 
     /* m. PS/2 keyboard */
-    _PrintStatus("Connecting PS/2 keyboard...", NT_SUCCESS(IoConnectKeyboard()));
+    {
+        NTSTATUS kb_st = IoConnectKeyboard();
+        _PrintStatus("Connecting PS/2 keyboard...", NT_SUCCESS(kb_st));
+        if (!NT_SUCCESS(kb_st))
+            KePanicLog("Keyboard: no i8042 detected (USB-only machine)");
+        else
+            KePanicLog("Keyboard: i8042 PS/2 controller found and enabled");
+    }
 
-    /* m2. COM1 serial (polled) — typing works on many PCs via USB-TTL on DB9 pins */
+    /* m2. COM1 serial (polled) */
     _PrintStatus("Opening serial console (COM1 115200)...", NT_SUCCESS(IoConnectSerial()));
-    KdPrintColor(
-        "  Tip: if your USB keyboard does nothing, use COM1 115200 8N1 (USB-serial).\n",
-        CON_DARK_YELLOW, CON_BLACK);
 
     /* n. Process Manager */
     _PrintStatus("Starting Process Manager...", NT_SUCCESS(PsInitializeProcessManager()));

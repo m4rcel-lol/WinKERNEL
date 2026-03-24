@@ -13,7 +13,7 @@
 #include <ntdef.h>
 #include <ntstatus.h>
 
-/* ── Command names for TAB completion ───────────────────────────────────── */
+/* ── Command names for TAB completion ------------------------------------- */
 static const CHAR* g_Commands[] = {
     "help", "cls", "echo", "ver", "mem", "sysinfo",
     "time", "set", "dir", "crash", "reboot", "shutdown", "color",
@@ -21,35 +21,35 @@ static const CHAR* g_Commands[] = {
     NULL
 };
 
-/* ── History ────────────────────────────────────────────────────────────── */
+/* ── History -----------------------------------------───────────────────── */
 static CHAR g_History[SHELL_HISTORY_MAX][SHELL_INPUT_MAX];
 static INT  g_HistoryCount = 0;
 static INT  g_HistoryPos   = -1;
 
-/* ── Environment variables ──────────────────────────────────────────────── */
+/* ── Environment variables -----------------------------------------─────── */
 static SHELL_ENV_VAR g_Env[SHELL_ENV_MAX];
 
-/* ── Input buffer ───────────────────────────────────────────────────────── */
+/* ── Input buffer -----------------------------------------──────────────── */
 static CHAR g_InputBuf[SHELL_INPUT_MAX];
 static INT  g_InputLen  = 0;
 static INT  g_CursorPos = 0;
 
-/* ── Forward declarations ───────────────────────────────────────────────── */
+/* ── Forward declarations -----------------------------------------──────── */
 static VOID _ShellExecute(PCSTR Line);
 static VOID _ShellRedrawLine(VOID);
 
-/* ── Shell_PrintBanner ──────────────────────────────────────────────────── */
+/* ── Shell_PrintBanner -----------------------------------------─────────── */
 VOID Shell_PrintBanner(VOID) {
     KdPrintColor("WinKernel Version 0.1.0 [x86_64]\n", CON_WHITE, CON_BLACK);
     KdPrintColor("(c) WinKernel Project. All rights reserved.\n\n", CON_GREY, CON_BLACK);
 }
 
-/* ── _PrintPrompt ───────────────────────────────────────────────────────── */
+/* ── _PrintPrompt -----------------------------------------──────────────── */
 static VOID _PrintPrompt(VOID) {
     KdPrintColor("C:\\> ", CON_WHITE, CON_BLACK);
 }
 
-/* ── _HistoryAdd ────────────────────────────────────────────────────────── */
+/* ── _HistoryAdd -----------------------------------------───────────────── */
 static VOID _HistoryAdd(PCSTR Line) {
     if (RtlStringLength(Line) == 0) return;
     /* Shift history up */
@@ -76,7 +76,7 @@ static VOID _ShellRedrawLine(VOID) {
     KdMoveCursor(save_col, row);
 }
 
-/* ── _TabComplete ───────────────────────────────────────────────────────── */
+/* ── _TabComplete -----------------------------------------──────────────── */
 static VOID _TabComplete(VOID) {
     /* Find matching command */
     PCSTR match = NULL;
@@ -105,7 +105,7 @@ static VOID _TabComplete(VOID) {
     }
 }
 
-/* ── Shell_Run ──────────────────────────────────────────────────────────── */
+/* ── Shell_Run -----------------------------------------─────────────────── */
 VOID Shell_Run(VOID) {
     Shell_PrintBanner();
 
@@ -118,9 +118,8 @@ VOID Shell_Run(VOID) {
 
         while (TRUE) {
             KEY_EVENT ev;
-            while (!IoConsoleReadEvent(&ev)) {
-                __asm__ volatile ("pause");
-            }
+            while (!IoConsoleReadEvent(&ev))
+                __asm__ volatile ("hlt");   /* sleep until next IRQ wakes us */
             if (ev.Released) continue;
 
             CHAR c = ev.Ascii;
@@ -236,7 +235,7 @@ VOID Shell_Run(VOID) {
 
 static VOID _CmdHelp(VOID) {
     KdPrintColor("WinKernel NTKRNL-X Command Reference\n", CON_WHITE, CON_BLACK);
-    KdPrintColor("─────────────────────────────────────\n", CON_GREY, CON_BLACK);
+    KdPrintColor("-------------------------------------\n", CON_GREY, CON_BLACK);
     KdPrint("help              Displays this help information.\n");
     KdPrint("cls               Clears the screen.\n");
     KdPrint("echo [text]       Displays text. 'echo.' prints a blank line.\n");
@@ -287,7 +286,7 @@ static VOID _CmdMem(VOID) {
     QWORD free_kb  = pool_free   / 1024;
 
     KdPrintColor("Memory Status\n", CON_WHITE, CON_BLACK);
-    KdPrintColor("─────────────────────────────────────────\n", CON_GREY, CON_BLACK);
+    KdPrintColor("-----------------------------------------\n", CON_GREY, CON_BLACK);
     KdPrintf("Total Physical Memory:     %llu MB\n", total_mb);
     KdPrintf("Available Physical Memory: %llu MB\n", avail_mb);
     KdPrintf("Kernel Pool Used:          %llu KB\n", used_kb);
@@ -297,7 +296,7 @@ static VOID _CmdMem(VOID) {
 
 static VOID _CmdSysinfo(VOID) {
     KdPrintColor("System Information\n", CON_WHITE, CON_BLACK);
-    KdPrintColor("─────────────────────────────────────────\n", CON_GREY, CON_BLACK);
+    KdPrintColor("-----------------------------------------\n", CON_GREY, CON_BLACK);
     KdPrintf("CPU Vendor:    %s\n", HalCpuInfo.VendorString);
     KdPrintf("CPU Brand:     %s\n", HalCpuInfo.BrandString);
     KdPrintf("Family:        %u  Model: %u  Stepping: %u\n",
@@ -444,12 +443,12 @@ static VOID _CmdColor(PCSTR Args) {
     KdClearScreen();
 }
 
-/* ── _CmdNet ────────────────────────────────────────────────────────────── */
+/* ── _CmdNet -----------------------------------------───────────────────── */
 static VOID _CmdNet(VOID) {
     NetPrintStatus();
 }
 
-/* ── _CmdNetping ────────────────────────────────────────────────────────── */
+/* ── _CmdNetping -----------------------------------------───────────────── */
 static VOID _CmdNetping(VOID) {
     if (!NetIsAvailable()) {
         KdPrintColor("No network adapter available.\n", CON_RED, CON_BLACK);
@@ -488,7 +487,7 @@ static VOID _CmdNetping(VOID) {
     }
 }
 
-/* ── _CmdGfxtest ────────────────────────────────────────────────────────── */
+/* ── _CmdGfxtest -----------------------------------------───────────────── */
 static VOID _CmdGfxtest(VOID) {
     GFX_MODE mode;
     GfxGetMode(&mode);
@@ -517,11 +516,11 @@ static VOID _CmdGfxtest(VOID) {
     KdClearScreen();
 }
 
-/* ── _CmdDrivers ────────────────────────────────────────────────────────── */
+/* ── _CmdDrivers -----------------------------------------───────────────── */
 static VOID _CmdDrivers(VOID) {
     DWORD n = IoGetLoadedDriverCount();
     KdPrintColor("Loaded drivers\n", CON_WHITE, CON_BLACK);
-    KdPrintColor("─────────────────────────────────────────\n", CON_GREY, CON_BLACK);
+    KdPrintColor("-----------------------------------------\n", CON_GREY, CON_BLACK);
     if (n == 0) {
         KdPrint("  (none registered)\n\n");
         return;
@@ -534,7 +533,7 @@ static VOID _CmdDrivers(VOID) {
     KdPrint("\n");
 }
 
-/* ── _CmdFetch ──────────────────────────────────────────────────────────── */
+/* ── _CmdFetch -----------------------------------------─────────────────── */
 static VOID _CmdFetch(VOID) {
     QWORD total_mb = MmGetTotalBytes() / (1024 * 1024);
     QWORD avail_mb = MmGetAvailableBytes() / (1024 * 1024);
@@ -566,7 +565,7 @@ static VOID _CmdFetch(VOID) {
     KdPrintfColor(CON_WHITE, CON_BLACK, " Drivers : %u loaded\n\n", IoGetLoadedDriverCount());
 }
 
-/* ── _ShellExecute ──────────────────────────────────────────────────────── */
+/* ── _ShellExecute -----------------------------------------─────────────── */
 static VOID _ShellExecute(PCSTR Line) {
     /* Skip leading spaces */
     while (*Line == ' ') Line++;

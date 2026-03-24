@@ -5,7 +5,6 @@
 #include <kernel/bsod.h>
 #include <kernel/terminal.h>
 #include <ntdef.h>
-
 /* ── IRQ handler table ──────────────────────────────────────────────────── */
 static KIRQ_HANDLER g_IrqHandlers[16];
 
@@ -69,22 +68,24 @@ VOID KiCommonHandler(PKTRAP_FRAME Frame) {
 VOID KiTrapHandler(PKTRAP_FRAME Frame) {
     QWORD vec = Frame->InterruptNumber;
 
+    /* Log the exception before rendering the BSOD */
+    KePanicLog("CPU exception #%llu at RIP=%016llx errcode=%016llx",
+               vec, Frame->RIP, Frame->ErrorCode);
+
     switch (vec) {
-    case 14: /* #PF Page Fault */
+    case 14:
+        KePanicLog("Page fault: CR2 (faulting address) logged in register dump");
         KeBugCheckWithFrame(STOP_PAGE_FAULT_IN_NONPAGED_AREA, Frame);
         break;
-
-    case 8:  /* #DF Double Fault */
+    case 8:
         KeBugCheckWithFrame(STOP_UNEXPECTED_KERNEL_MODE_TRAP, Frame);
         break;
-
     default:
         KeBugCheckWithFrame(STOP_KERNEL_MODE_EXCEPTION, Frame);
         break;
     }
 
-    /* KeBugCheckWithFrame never returns */
-    (VOID)g_ExceptionNames[0]; /* suppress unused warning */
+    (VOID)g_ExceptionNames[0];
 }
 
 /* ── KiIsrDispatch — hardware IRQs ─────────────────────────────────────── */
