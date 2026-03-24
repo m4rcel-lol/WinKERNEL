@@ -69,6 +69,7 @@ C_SOURCES := \
     $(SRC_DIR)/ob/ob.c \
     $(SRC_DIR)/io/io.c \
     $(SRC_DIR)/io/keyboard.c \
+    $(SRC_DIR)/io/serial.c \
     $(SRC_DIR)/ps/ps.c \
     $(SRC_DIR)/net/rtl8139.c \
     $(SRC_DIR)/gfx/gfx.c \

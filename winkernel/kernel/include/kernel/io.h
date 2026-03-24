@@ -20,6 +20,9 @@ typedef struct _KEY_EVENT {
 NTSTATUS    IoInitialize(VOID);
 NTSTATUS    IoConnectKeyboard(VOID);
 
+/* Merged console input: PS/2 keyboard + COM1 serial (see IoConnectSerial). */
+BOOL        IoConsoleReadEvent(PKEY_EVENT Event);
+
 /* Loaded miniport / class driver list (registration order) */
 NTSTATUS    IoRegisterLoadedDriver(PCSTR Name);
 DWORD       IoGetLoadedDriverCount(VOID);

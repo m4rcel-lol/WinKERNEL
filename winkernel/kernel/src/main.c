@@ -13,6 +13,7 @@
 #include <kernel/pci.h>
 #include <kernel/net.h>
 #include <kernel/gfx.h>
+#include <kernel/serial.h>
 #include <ntdef.h>
 #include <ntstatus.h>
 #include <limine.h>
@@ -121,6 +122,12 @@ void KiSystemStartup(void) {
 
     /* m. PS/2 keyboard */
     _PrintStatus("Connecting PS/2 keyboard...", NT_SUCCESS(IoConnectKeyboard()));
+
+    /* m2. COM1 serial (polled) — typing works on many PCs via USB-TTL on DB9 pins */
+    _PrintStatus("Opening serial console (COM1 115200)...", NT_SUCCESS(IoConnectSerial()));
+    KdPrintColor(
+        "  Tip: if your USB keyboard does nothing, use COM1 115200 8N1 (USB-serial).\n",
+        CON_DARK_YELLOW, CON_BLACK);
 
     /* n. Process Manager */
     _PrintStatus("Starting Process Manager...", NT_SUCCESS(PsInitializeProcessManager()));

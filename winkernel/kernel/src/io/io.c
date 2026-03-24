@@ -1,6 +1,7 @@
 /* WinKernel NTKRNL-X — I/O Manager */
 
 #include <kernel/io.h>
+#include <kernel/serial.h>
 #include <kernel/rtl.h>
 #include <ntdef.h>
 #include <ntstatus.h>
@@ -39,5 +40,25 @@ DWORD IoGetLoadedDriverCount(VOID) {
 BOOL IoGetLoadedDriverName(DWORD Index, PSTR Out, SIZE_T OutSize) {
     if (!Out || OutSize == 0 || Index >= g_IoDriverCount) return FALSE;
     RtlCopyString(Out, g_IoDrivers[Index], OutSize);
+    return TRUE;
+}
+
+/* ── IoConsoleReadEvent ─────────────────────────────────────────────────── */
+
+BOOL IoConsoleReadEvent(PKEY_EVENT Event) {
+    if (!Event) return FALSE;
+    if (IoKeyboardReadEvent(Event)) return TRUE;
+
+    CHAR c;
+    if (!IoSerialTryRead(&c)) return FALSE;
+
+    Event->Scancode  = 0;
+    Event->Released  = FALSE;
+    if (c == '\r')
+        Event->Ascii = '\n';
+    else if (c == '\x7F' || c == '\b')
+        Event->Ascii = '\b';
+    else
+        Event->Ascii = c;
     return TRUE;
 }

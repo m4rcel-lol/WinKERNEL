@@ -3,6 +3,7 @@
 #include <kernel/io.h>
 #include <kernel/ke.h>
 #include <kernel/hal.h>
+#include <kernel/serial.h>
 #include <kernel/rtl.h>
 #include <ntdef.h>
 
@@ -48,6 +49,32 @@ static volatile BOOL g_CapsLock   = FALSE;
 #define SC_RSHIFT   0x36
 #define SC_CAPS     0x3A
 #define SC_RELEASE  0x80    /* bit 7 set = key release */
+
+/* ── i8042 helpers ───────────────────────────────────────────────────── */
+static BOOL _WaitInputBufferEmpty(DWORD Attempts) {
+    while (Attempts--) {
+        /* Status bit1 = input buffer full */
+        if (!(HalReadPortByte(PS2_STATUS) & 0x02)) return TRUE;
+        __asm__ volatile ("pause");
+    }
+    return FALSE;
+}
+
+static BOOL _WaitOutputBufferFull(DWORD Attempts) {
+    while (Attempts--) {
+        /* Status bit0 = output buffer full */
+        if (HalReadPortByte(PS2_STATUS) & 0x01) return TRUE;
+        __asm__ volatile ("pause");
+    }
+    return FALSE;
+}
+
+static VOID _DrainPs2Loop(DWORD MaxBytes) {
+    while (MaxBytes--) {
+        if (!_WaitOutputBufferFull(2000)) return;
+        (VOID)HalReadPortByte(PS2_DATA);
+    }
+}
 
 /* ── _KbEnqueue ─────────────────────────────────────────────────────────── */
 static VOID _KbEnqueue(BYTE Scancode, CHAR Ascii, BOOL Released) {
@@ -119,6 +146,17 @@ NTSTATUS IoConnectKeyboard(VOID) {
     HalPicUnmaskIrq(1);
     HalPicUnmaskIrq(2);
 
+    /* Bring up keyboard: enable PS/2 port, then "enable scanning" (0xF4).
+       Note: 0xD1 is *wrong* here — it writes the controller output port (A20/reset),
+       not the keyboard. Keyboard commands go to 0x60 after the controller accepts. */
+    if (_WaitInputBufferEmpty(100000))
+        HalWritePortByte(PS2_STATUS, 0xAE); /* enable first PS/2 port */
+    _DrainPs2Loop(8);
+
+    if (_WaitInputBufferEmpty(100000))
+        HalWritePortByte(PS2_DATA, 0xF4); /* keyboard: enable scanning */
+    _DrainPs2Loop(8);
+
     (VOID)IoRegisterLoadedDriver("PS/2 Keyboard (i8042prt)");
 
     return STATUS_SUCCESS;
@@ -154,6 +192,13 @@ CHAR IoKeyboardGetChar(VOID) {
     KEY_EVENT ev;
     while (TRUE) {
         while (!IoKeyboardReadEvent(&ev)) {
+            CHAR c;
+            if (IoSerialTryRead(&c)) {
+                if (c == '\r') return '\n';
+                if (c == '\x7F' || c == '\b') return '\b';
+                if (c >= 32 && c <= 126) return c;
+                continue;
+            }
             __asm__ volatile ("pause");
         }
         if (!ev.Released && ev.Ascii != 0) return ev.Ascii;
