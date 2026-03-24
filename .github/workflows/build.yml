@@ -65,10 +65,14 @@ jobs:
           make -j$(nproc) all-gcc all-target-libgcc
           make install-gcc install-target-libgcc
 
-      - name: Download Limine bootloader
+      - name: Download and prepare Limine bootloader
         run: |
           git clone --depth=1 --branch v8.x-binary \
             https://github.com/limine-bootloader/limine.git limine_bin
+
+          # Build the limine deploy tool from source (limine.c ships in the binary branch)
+          gcc -O2 -o limine_bin/limine limine_bin/limine.c
+
           mkdir -p winkernel/limine
           cp limine_bin/limine-bios.sys      winkernel/limine/
           cp limine_bin/limine-bios-cd.bin   winkernel/limine/
