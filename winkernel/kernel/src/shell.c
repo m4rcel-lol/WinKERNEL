@@ -115,8 +115,9 @@ VOID Shell_Run(VOID) {
 
         while (TRUE) {
             KEY_EVENT ev;
+            /* hlt until an IRQ wakes us — much better than spinning */
             while (!IoKeyboardReadEvent(&ev)) {
-                __asm__ volatile ("pause");
+                __asm__ volatile ("hlt");
             }
             if (ev.Released) continue;
 

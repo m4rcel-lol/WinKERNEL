@@ -16,14 +16,18 @@
 #define IRQ_BASE            0x20
 
 /* ── Interrupt frame pushed by our stubs ───────────────────────────────── */
+/* Field order MUST match the push order in idt.asm _isr_common exactly.    */
+/* First field = lowest address = top of stack after all pushes.            */
 typedef struct _KTRAP_FRAME {
+    /* GPRs — pushed last-to-first so R15 is at lowest address */
     QWORD   R15, R14, R13, R12;
     QWORD   R11, R10, R9,  R8;
     QWORD   RBP, RDI, RSI, RDX;
     QWORD   RCX, RBX, RAX;
+    /* Pushed by stub */
     QWORD   InterruptNumber;
     QWORD   ErrorCode;
-    /* CPU-pushed on interrupt */
+    /* Pushed by CPU on interrupt entry */
     QWORD   RIP;
     QWORD   CS;
     QWORD   RFLAGS;

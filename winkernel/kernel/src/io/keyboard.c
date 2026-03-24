@@ -107,8 +107,15 @@ NTSTATUS IoConnectKeyboard(VOID) {
     g_ShiftHeld = FALSE;
     g_CapsLock  = FALSE;
 
+    /* Flush any stale byte sitting in the PS/2 buffer */
+    while (HalReadPortByte(PS2_STATUS) & 0x01)
+        HalReadPortByte(PS2_DATA);
+
     KeRegisterIrqHandler(1, _KbIrqHandler);
+
+    /* Unmask IRQ1 (keyboard) and IRQ2 (cascade — required for slave PIC) */
     HalPicUnmaskIrq(1);
+    HalPicUnmaskIrq(2);
 
     return STATUS_SUCCESS;
 }
@@ -135,10 +142,9 @@ CHAR IoKeyboardGetChar(VOID) {
     KEY_EVENT ev;
     while (TRUE) {
         while (!IoKeyboardReadEvent(&ev)) {
-            __asm__ volatile ("pause");
+            __asm__ volatile ("hlt");
         }
         if (!ev.Released && ev.Ascii != 0) return ev.Ascii;
-        /* Also return backspace and enter */
         if (!ev.Released && (ev.Ascii == '\b' || ev.Ascii == '\n')) return ev.Ascii;
     }
 }

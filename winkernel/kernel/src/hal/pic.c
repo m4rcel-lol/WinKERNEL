@@ -46,9 +46,9 @@ VOID HalRemapPic(BYTE MasterOffset, BYTE SlaveOffset) {
     HalWritePortByte(PIC2_DATA, ICW4_8086);
     HalIoDelay();
 
-    /* Restore masks */
-    HalWritePortByte(PIC1_DATA, mask1);
-    HalWritePortByte(PIC2_DATA, mask2);
+    /* Mask all IRQs — drivers unmask their own lines individually */
+    HalWritePortByte(PIC1_DATA, 0xFF);
+    HalWritePortByte(PIC2_DATA, 0xFF);
 }
 
 /* ── HalPicSendEoi ──────────────────────────────────────────────────────── */
