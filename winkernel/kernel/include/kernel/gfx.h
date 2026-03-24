@@ -10,6 +10,7 @@
 #define GFX_GREEN       0x00FF00
 #define GFX_BLUE        0x0000FF
 #define GFX_CYAN        0x00FFFF
+#define GFX_MAGENTA     0xFF00FF
 #define GFX_YELLOW      0xFFFF00
 #define GFX_GREY        0xC0C0C0
 #define GFX_DARK_GREY   0x808080
