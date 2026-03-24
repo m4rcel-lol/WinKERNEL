@@ -34,8 +34,8 @@ static VOID _AppendStr(PSTR Buf, SIZE_T BufSize, SIZE_T* Pos, PCSTR s,
 static VOID _AppendUlong(PSTR Buf, SIZE_T BufSize, SIZE_T* Pos,
                          ULONG_PTR Value, INT Base, BOOL Upper,
                          INT Width, BOOL LeftAlign, CHAR PadChar) {
-    const CHAR* digits = Upper ? "0123456789ABCDEF" : "0123456789abcdef";
-    CHAR tmp[65];
+    const char* digits = Upper ? "0123456789ABCDEF" : "0123456789abcdef";
+    char tmp[65];
     INT  tpos = 0;
 
     if (Value == 0) {
@@ -49,7 +49,7 @@ static VOID _AppendUlong(PSTR Buf, SIZE_T BufSize, SIZE_T* Pos,
     }
 
     /* reverse into number string */
-    CHAR numstr[65];
+    char numstr[65];
     for (INT i = 0; i < tpos; i++) numstr[i] = tmp[tpos - 1 - i];
     numstr[tpos] = '\0';
 
@@ -58,7 +58,7 @@ static VOID _AppendUlong(PSTR Buf, SIZE_T BufSize, SIZE_T* Pos,
 
 static VOID _AppendLong(PSTR Buf, SIZE_T BufSize, SIZE_T* Pos,
                         LONGLONG Value, INT Width, BOOL LeftAlign, CHAR PadChar) {
-    CHAR tmp[22];
+    char tmp[22];
     INT  tpos = 0;
     BOOL neg  = FALSE;
 
@@ -74,7 +74,7 @@ static VOID _AppendLong(PSTR Buf, SIZE_T BufSize, SIZE_T* Pos,
     }
     if (neg) tmp[tpos++] = '-';
 
-    CHAR numstr[22];
+    char numstr[22];
     for (INT i = 0; i < tpos; i++) numstr[i] = tmp[tpos - 1 - i];
     numstr[tpos] = '\0';
 

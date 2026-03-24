@@ -9,7 +9,7 @@ typedef void                VOID;
 typedef bool                BOOL;
 typedef uint8_t             BYTE;
 typedef uint8_t             UCHAR;
-typedef int8_t              CHAR;
+typedef char                CHAR;       /* plain char — matches string literals */
 typedef uint16_t            WORD;
 typedef uint16_t            USHORT;
 typedef int16_t             SHORT;

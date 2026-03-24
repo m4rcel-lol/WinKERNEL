@@ -39,7 +39,7 @@ static VOID _BsodPrint(PCSTR s) {
 }
 
 static VOID _BsodPrintf(PCSTR fmt, ...) {
-    CHAR buf[256];
+    char buf[256];
     va_list args;
     va_start(args, fmt);
     RtlVprintf(buf, sizeof(buf), fmt, args);

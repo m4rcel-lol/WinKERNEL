@@ -92,8 +92,8 @@ BOOL RtlStringStartsWith(PCSTR Str, PCSTR Prefix) {
 /* ── Number conversion ──────────────────────────────────────────────────── */
 
 VOID RtlUlongToHexString(ULONG_PTR Value, PSTR Buffer, BOOL UpperCase) {
-    const CHAR* digits = UpperCase ? "0123456789ABCDEF" : "0123456789abcdef";
-    CHAR tmp[17];
+    const char* digits = UpperCase ? "0123456789ABCDEF" : "0123456789abcdef";
+    char tmp[17];
     INT  pos = 0;
 
     if (Value == 0) {
@@ -114,7 +114,7 @@ VOID RtlUlongToHexString(ULONG_PTR Value, PSTR Buffer, BOOL UpperCase) {
 }
 
 VOID RtlUlongToDecString(ULONG_PTR Value, PSTR Buffer) {
-    CHAR tmp[21];
+    char tmp[21];
     INT  pos = 0;
 
     if (Value == 0) {

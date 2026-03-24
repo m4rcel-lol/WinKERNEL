@@ -326,7 +326,7 @@ VOID KdPrintColor(PCSTR Text, BYTE Fg, BYTE Bg) {
 
 /* ── KdPrintf ───────────────────────────────────────────────────────────── */
 VOID KdPrintf(PCSTR Format, ...) {
-    CHAR buf[1024];
+    char buf[1024];
     va_list args;
     va_start(args, Format);
     RtlVprintf(buf, sizeof(buf), Format, args);
@@ -336,7 +336,7 @@ VOID KdPrintf(PCSTR Format, ...) {
 
 /* ── KdPrintfColor ──────────────────────────────────────────────────────── */
 VOID KdPrintfColor(BYTE Fg, BYTE Bg, PCSTR Format, ...) {
-    CHAR buf[1024];
+    char buf[1024];
     va_list args;
     va_start(args, Format);
     RtlVprintf(buf, sizeof(buf), Format, args);
