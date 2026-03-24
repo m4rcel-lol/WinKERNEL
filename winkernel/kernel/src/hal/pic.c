@@ -18,10 +18,6 @@
 /* ── HalRemapPic ────────────────────────────────────────────────────────── */
 
 VOID HalRemapPic(BYTE MasterOffset, BYTE SlaveOffset) {
-    /* Save current masks */
-    BYTE mask1 = HalReadPortByte(PIC1_DATA);
-    BYTE mask2 = HalReadPortByte(PIC2_DATA);
-
     /* Start initialization sequence (cascade mode) */
     HalWritePortByte(PIC1_CMD,  ICW1_INIT | ICW1_ICW4);
     HalIoDelay();
