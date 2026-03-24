@@ -60,7 +60,7 @@ NTSTATUS MmMapPage(ULONG_PTR Phys, ULONG_PTR Virt, DWORD Flags) {
     pt[PT_IDX(Virt)] = (Phys & ~0xFFFULL) | (QWORD)Flags | PAGE_PRESENT;
 
     /* Invalidate TLB entry */
-    __asm__ volatile ("invlpg [%0]" :: "r"(Virt) : "memory");
+    __asm__ volatile ("invlpg (%0)" :: "r"(Virt) : "memory");
 
     return STATUS_SUCCESS;
 }
@@ -81,7 +81,7 @@ VOID MmUnmapPage(ULONG_PTR Virt) {
     PTE* pt = (PTE*)((pd[PD_IDX(Virt)] & ~0xFFFULL) + hhdm);
 
     pt[PT_IDX(Virt)] = 0;
-    __asm__ volatile ("invlpg [%0]" :: "r"(Virt) : "memory");
+    __asm__ volatile ("invlpg (%0)" :: "r"(Virt) : "memory");
 }
 
 /* ── MmGetPhysicalAddress ───────────────────────────────────────────────── */

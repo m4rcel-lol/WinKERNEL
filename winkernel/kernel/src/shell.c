@@ -388,9 +388,9 @@ static VOID _CmdReboot(VOID) {
     } while (val & 0x02);
     HalWritePortByte(0x64, 0xFE);
 
-    /* If that didn't work, triple fault */
+    /* If that didn't work, triple fault via invalid IDTR load */
     __asm__ volatile (
-        "lidt [%0]\n"
+        "lidt (%0)\n"
         "int $0\n"
         :: "r"((QWORD[]){0, 0})
     );
