@@ -23,7 +23,7 @@ NTSTATUS PsInitializeProcessManager(VOID) {
 
     /* Read current CR3 for the system process directory base */
     ULONG_PTR cr3;
-    __asm__ volatile ("mov %0, cr3" : "=r"(cr3));
+    __asm__ volatile ("mov %%cr3, %0" : "=r"(cr3));
     g_SystemProcess.DirectoryBase = cr3 & ~0xFFFULL;
 
     /* System thread */

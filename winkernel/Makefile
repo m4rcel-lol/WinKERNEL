@@ -32,6 +32,7 @@ CFLAGS := \
     -mno-mmx \
     -mno-sse \
     -mno-sse2 \
+    -mcmodel=kernel \
     -Wall \
     -Wextra \
     -Werror \

@@ -68,10 +68,10 @@ static VOID _BsodRenderRegisters(PKTRAP_FRAME Frame) {
 
     /* Read control registers */
     ULONG_PTR cr0, cr2, cr3, cr4;
-    __asm__ volatile ("mov %0, cr0" : "=r"(cr0));
-    __asm__ volatile ("mov %0, cr2" : "=r"(cr2));
-    __asm__ volatile ("mov %0, cr3" : "=r"(cr3));
-    __asm__ volatile ("mov %0, cr4" : "=r"(cr4));
+    __asm__ volatile ("mov %%cr0, %0" : "=r"(cr0));
+    __asm__ volatile ("mov %%cr2, %0" : "=r"(cr2));
+    __asm__ volatile ("mov %%cr3, %0" : "=r"(cr3));
+    __asm__ volatile ("mov %%cr4, %0" : "=r"(cr4));
 
     _BsodPrintf("CR0=%016llx  CR2=%016llx  CR3=%016llx  CR4=%016llx\n",
                 cr0, cr2, cr3, cr4);

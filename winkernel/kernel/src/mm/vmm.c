@@ -109,7 +109,7 @@ NTSTATUS MmInitializePaging(VOID) {
     /* Read current CR3 — Limine already set up paging for us.
        We record the physical address of the active PML4 and use it. */
     ULONG_PTR cr3;
-    __asm__ volatile ("mov %0, cr3" : "=r"(cr3));
+    __asm__ volatile ("mov %%cr3, %0" : "=r"(cr3));
     g_Pml4Phys = cr3 & ~0xFFFULL;
 
     /* The kernel is already mapped by Limine at KERNEL_VIRT_BASE.
