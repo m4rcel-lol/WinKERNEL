@@ -17,7 +17,7 @@
 static const CHAR* g_Commands[] = {
     "help", "cls", "echo", "ver", "mem", "sysinfo",
     "time", "set", "dir", "crash", "reboot", "shutdown", "color",
-    "net", "netping", "gfxtest",
+    "net", "netping", "gfxtest", "drivers",
     NULL
 };
 
@@ -254,6 +254,7 @@ static VOID _CmdHelp(VOID) {
     KdPrint("net               Displays network adapter status and MAC address.\n");
     KdPrint("netping           Sends a raw ARP probe to test the Tx path.\n");
     KdPrint("gfxtest           Displays color bars to test the framebuffer.\n");
+    KdPrint("drivers           Lists boot-loaded kernel drivers.\n");
     KdPrint("\n");
 }
 
@@ -467,18 +468,17 @@ static VOID _CmdNetping(VOID) {
     for (BYTE i = 0; i < ETH_ALEN; i++) frame[6 + i] = src.b[i];  /* src: our MAC   */
     frame[12] = 0x08; frame[13] = 0x06;                             /* EtherType: ARP */
 
-    /* ARP payload */
+    /* ARP payload (28 bytes): IPv4 over Ethernet request */
     BYTE* arp = frame + 14;
     arp[0] = 0x00; arp[1] = 0x01;  /* HTYPE: Ethernet */
     arp[2] = 0x08; arp[3] = 0x00;  /* PTYPE: IPv4     */
     arp[4] = 6;                     /* HLEN            */
     arp[5] = 4;                     /* PLEN            */
     arp[6] = 0x00; arp[7] = 0x01;  /* OPER: request   */
-    for (BYTE i = 0; i < ETH_ALEN; i++) arp[8  + i] = src.b[i];   /* sender MAC */
-    /* sender IP: 0.0.0.0 (probe) */
-    /* target MAC: 00:00:00:00:00:00 */
-    /* target IP: 192.168.1.1 */
-    arp[28] = 192; arp[29] = 168; arp[30] = 1; arp[31] = 1;
+    for (BYTE i = 0; i < ETH_ALEN; i++) arp[8 + i] = src.b[i];    /* SHA */
+    arp[14] = 0; arp[15] = 0; arp[16] = 0; arp[17] = 0;          /* SPA: 0.0.0.0 */
+    for (BYTE i = 0; i < ETH_ALEN; i++) arp[18 + i] = 0;         /* THA */
+    arp[24] = 192; arp[25] = 168; arp[26] = 1; arp[27] = 1;      /* TPA */
 
     NTSTATUS st = NetSendFrame(frame, 60);
     if (NT_SUCCESS(st)) {
@@ -515,6 +515,23 @@ static VOID _CmdGfxtest(VOID) {
     /* Restore black screen and reprint prompt area */
     GfxFillScreen(GFX_BLACK);
     KdClearScreen();
+}
+
+/* ── _CmdDrivers ────────────────────────────────────────────────────────── */
+static VOID _CmdDrivers(VOID) {
+    DWORD n = IoGetLoadedDriverCount();
+    KdPrintColor("Loaded drivers\n", CON_WHITE, CON_BLACK);
+    KdPrintColor("─────────────────────────────────────────\n", CON_GREY, CON_BLACK);
+    if (n == 0) {
+        KdPrint("  (none registered)\n\n");
+        return;
+    }
+    CHAR name[IO_DRIVER_NAME_MAX];
+    for (DWORD i = 0; i < n; i++) {
+        if (IoGetLoadedDriverName(i, name, sizeof(name)))
+            KdPrintf("  [%u] %s\n", i + 1, name);
+    }
+    KdPrint("\n");
 }
 
 /* ── _ShellExecute ──────────────────────────────────────────────────────── */
@@ -566,6 +583,8 @@ static VOID _ShellExecute(PCSTR Line) {
         _CmdNetping();
     } else if (RtlCompareString(cmd, "gfxtest") == 0) {
         _CmdGfxtest();
+    } else if (RtlCompareString(cmd, "drivers") == 0) {
+        _CmdDrivers();
     } else {
         KdPrintf("'%s' is not recognized as an internal command.\n", cmd);
         KdPrint("Type 'help' for a list of commands.\n");

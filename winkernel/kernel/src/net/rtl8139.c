@@ -6,7 +6,10 @@
 #include <kernel/ke.h>
 #include <kernel/terminal.h>
 #include <kernel/rtl.h>
+#include <kernel/mm.h>
+#include <kernel/io.h>
 #include <ntdef.h>
+#include <ntstatus.h>
 
 /* ── RTL8139 register offsets (I/O base relative) ──────────────────────── */
 #define RTL_MAC0        0x00    /* MAC address bytes 0-5 */
@@ -77,6 +80,15 @@ static inline VOID  _NicWrite8 (BYTE reg, BYTE  v) { HalWritePortByte ((WORD)(g_
 static inline VOID  _NicWrite16(BYTE reg, WORD  v) { HalWritePortWord ((WORD)(g_Nic.IoBase + reg), v); }
 static inline VOID  _NicWrite32(BYTE reg, DWORD v) { HalWritePortDword((WORD)(g_Nic.IoBase + reg), v); }
 
+/* RTL8139 DMA registers hold *physical* addresses (32-bit bus master). */
+static NTSTATUS _NicSetDmaPhys(PVOID Virt, DWORD* OutLow32) {
+    ULONG_PTR phys = MmGetPhysicalAddress((ULONG_PTR)Virt);
+    if (phys == 0) return STATUS_DEVICE_CONFIGURATION_ERROR;
+    if (phys >= 0x100000000ULL) return STATUS_INSUFFICIENT_RESOURCES;
+    *OutLow32 = (DWORD)phys;
+    return STATUS_SUCCESS;
+}
+
 /* ── IRQ handler ────────────────────────────────────────────────────────── */
 static VOID _NicIrqHandler(PVOID Frame) {
     (VOID)Frame;
@@ -125,6 +137,7 @@ static VOID _NicIrqHandler(PVOID Frame) {
 
 /* ── NetInitialize ──────────────────────────────────────────────────────── */
 NTSTATUS NetInitialize(VOID) {
+    NTSTATUS dma_st;
     RtlZeroMemory(&g_Nic, sizeof(g_Nic));
     g_Nic.Available = FALSE;
 
@@ -161,12 +174,18 @@ NTSTATUS NetInitialize(VOID) {
     for (BYTE i = 0; i < ETH_ALEN; i++)
         g_Nic.Mac.b[i] = _NicRead8(i);
 
-    /* Set Rx buffer */
-    _NicWrite32(RTL_RBSTART, (DWORD)(ULONG_PTR)g_RxBuf);
+    /* Set Rx / Tx DMA buffers (must be below 4G and identity-reachable by bus) */
+    DWORD phys_rx;
+    dma_st = _NicSetDmaPhys(g_RxBuf, &phys_rx);
+    if (!NT_SUCCESS(dma_st)) return dma_st;
+    _NicWrite32(RTL_RBSTART, phys_rx);
 
-    /* Set Tx buffer addresses */
-    for (BYTE i = 0; i < TX_DESC_COUNT; i++)
-        _NicWrite32((BYTE)(RTL_TSAD0 + i * 4), (DWORD)(ULONG_PTR)g_TxBuf[i]);
+    for (BYTE i = 0; i < TX_DESC_COUNT; i++) {
+        DWORD phys_tx;
+        dma_st = _NicSetDmaPhys(g_TxBuf[i], &phys_tx);
+        if (!NT_SUCCESS(dma_st)) return dma_st;
+        _NicWrite32((BYTE)(RTL_TSAD0 + i * 4), phys_tx);
+    }
 
     /* Enable Rx + Tx */
     _NicWrite8(RTL_CMD, CMD_RE | CMD_TE);
@@ -189,6 +208,8 @@ NTSTATUS NetInitialize(VOID) {
     g_Nic.RxOffset  = 0;
     g_Nic.TxCurrent = 0;
     g_Nic.Available = TRUE;
+
+    (VOID)IoRegisterLoadedDriver("RTL8139 NDIS Miniport");
 
     return STATUS_SUCCESS;
 }

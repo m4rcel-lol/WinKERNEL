@@ -181,4 +181,13 @@ PVOID ExReallocatePool(PVOID Ptr, SIZE_T NewSize) {
 /* ── Accessors ──────────────────────────────────────────────────────────── */
 
 SIZE_T ExGetPoolUsed(VOID) { return g_UsedBytes; }
-SIZE_T ExGetPoolFree(VOID) { return KERNEL_POOL_SIZE - g_UsedBytes - BLOCK_OVERHEAD; }
+
+SIZE_T ExGetPoolFree(VOID) {
+    SIZE_T free_bytes = 0;
+    HEAP_BLOCK* cur = g_HeapHead;
+    while (cur) {
+        if (cur->Free) free_bytes += cur->Size;
+        cur = cur->Next;
+    }
+    return free_bytes;
+}

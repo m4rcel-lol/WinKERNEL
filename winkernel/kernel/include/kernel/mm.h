@@ -26,9 +26,11 @@
 /* ── Kernel virtual base ────────────────────────────────────────────────── */
 #define KERNEL_VIRT_BASE    0xFFFFFFFF80000000ULL
 
-/* ── Physical ↔ virtual helpers ─────────────────────────────────────────── */
-#define PHYS_TO_VIRT(p)     ((PVOID)((ULONG_PTR)(p) + HHDM_OFFSET))
-#define VIRT_TO_PHYS(v)     ((ULONG_PTR)(v) - HHDM_OFFSET)
+/* ── Physical ↔ virtual (Limine HHDM only) ────────────────────────────────
+   All physical RAM is identity-mapped at HHDM offset. This macro works only
+   for addresses in that direct map, not for kernel .text/.bss (high half). */
+#define PHYS_TO_HHDM(p)     ((PVOID)((ULONG_PTR)(p) + HHDM_OFFSET))
+/* Kernel VA → PA: use MmGetPhysicalAddress() after paging is initialized. */
 
 /* ── PMM ────────────────────────────────────────────────────────────────── */
 NTSTATUS    MmInitializePhysicalMemory(VOID);

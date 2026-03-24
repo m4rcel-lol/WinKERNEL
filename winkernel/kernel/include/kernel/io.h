@@ -13,9 +13,17 @@ typedef struct _KEY_EVENT {
 /* ── Keyboard queue size ────────────────────────────────────────────────── */
 #define KB_QUEUE_SIZE   256
 
+#define IO_DRIVER_NAME_MAX   64
+#define IO_MAX_LOADED_DRIVERS 16
+
 /* ── Io interface ───────────────────────────────────────────────────────── */
 NTSTATUS    IoInitialize(VOID);
 NTSTATUS    IoConnectKeyboard(VOID);
+
+/* Loaded miniport / class driver list (registration order) */
+NTSTATUS    IoRegisterLoadedDriver(PCSTR Name);
+DWORD       IoGetLoadedDriverCount(VOID);
+BOOL        IoGetLoadedDriverName(DWORD Index, PSTR Out, SIZE_T OutSize);
 
 /* ── Keyboard API ───────────────────────────────────────────────────────── */
 BOOL        IoKeyboardReadEvent(PKEY_EVENT Event);

@@ -174,9 +174,11 @@ static const DWORD g_Palette[16] = {
 
 static struct {
     DWORD*  Framebuffer;
+    BYTE*   RawFb;
     DWORD   Width;
     DWORD   Height;
     DWORD   Pitch;         /* in bytes */
+    DWORD   Bpp;
     DWORD   Cols;
     DWORD   Rows;
     DWORD   CursorCol;
@@ -185,6 +187,19 @@ static struct {
     BYTE    BgColor;
     BOOL    Initialized;
 } g_Con;
+
+static VOID _ConPutPixel(DWORD X, DWORD Y, DWORD Rgb) {
+    if (!g_Con.RawFb || X >= g_Con.Width || Y >= g_Con.Height) return;
+    BYTE* row = g_Con.RawFb + Y * g_Con.Pitch;
+    if (g_Con.Bpp == 32) {
+        ((DWORD*)row)[X] = Rgb;
+    } else if (g_Con.Bpp == 24) {
+        BYTE* p = row + X * 3;
+        p[0] = (BYTE)(Rgb & 0xFF);
+        p[1] = (BYTE)((Rgb >> 8) & 0xFF);
+        p[2] = (BYTE)((Rgb >> 16) & 0xFF);
+    }
+}
 
 /* ── Internal: draw one glyph at (col, row) ─────────────────────────────── */
 static VOID _DrawGlyph(DWORD Col, DWORD Row, CHAR c, BYTE Fg, BYTE Bg) {
@@ -203,9 +218,7 @@ static VOID _DrawGlyph(DWORD Col, DWORD Row, CHAR c, BYTE Fg, BYTE Bg) {
         for (DWORD col = 0; col < FONT_W; col++) {
             DWORD x = px + col;
             DWORD y = py + row;
-            if (x >= g_Con.Width || y >= g_Con.Height) continue;
-            DWORD pixel_offset = y * (g_Con.Pitch / 4) + x;
-            g_Con.Framebuffer[pixel_offset] = (bits & (0x80 >> col)) ? fg_rgb : bg_rgb;
+            _ConPutPixel(x, y, (bits & (0x80 >> col)) ? fg_rgb : bg_rgb);
         }
     }
 }
@@ -219,6 +232,14 @@ VOID WinConsole_Init(VOID) {
     }
 
     struct limine_framebuffer* fb = fb_request.response->framebuffers[0];
+    g_Con.Bpp = (DWORD)fb->bpp;
+    if (g_Con.Bpp != 32 && g_Con.Bpp != 24) {
+        g_Con.Initialized = FALSE;
+        g_Con.RawFb = NULL;
+        return;
+    }
+
+    g_Con.RawFb        = (BYTE*)fb->address;
     g_Con.Framebuffer  = (DWORD*)fb->address;
     g_Con.Width        = (DWORD)fb->width;
     g_Con.Height       = (DWORD)fb->height;
@@ -236,10 +257,11 @@ VOID WinConsole_Init(VOID) {
 
 /* ── KdClearScreen ──────────────────────────────────────────────────────── */
 VOID KdClearScreen(VOID) {
-    if (!g_Con.Initialized) return;
+    if (!g_Con.Initialized || !g_Con.RawFb) return;
     DWORD bg_rgb = g_Palette[g_Con.BgColor & 0xF];
-    DWORD pixels = (g_Con.Pitch / 4) * g_Con.Height;
-    for (DWORD i = 0; i < pixels; i++) g_Con.Framebuffer[i] = bg_rgb;
+    for (DWORD y = 0; y < g_Con.Height; y++) {
+        for (DWORD x = 0; x < g_Con.Width; x++) _ConPutPixel(x, y, bg_rgb);
+    }
     g_Con.CursorCol = 0;
     g_Con.CursorRow = 0;
 }
@@ -249,16 +271,19 @@ VOID KdScroll(VOID) {
     if (!g_Con.Initialized) return;
     DWORD row_bytes  = g_Con.Pitch * FONT_H;
     DWORD total_rows = g_Con.Rows;
-    BYTE* fb         = (BYTE*)g_Con.Framebuffer;
+    BYTE* fb = g_Con.RawFb;
 
     /* Move all rows up by one */
     RtlCopyMemory(fb, fb + row_bytes, row_bytes * (total_rows - 1));
 
-    /* Clear the last row */
+    /* Clear the last text row */
     DWORD bg_rgb = g_Palette[g_Con.BgColor & 0xF];
-    DWORD* last_row = (DWORD*)(fb + row_bytes * (total_rows - 1));
-    DWORD  pixels_per_row = (g_Con.Pitch / 4) * FONT_H;
-    for (DWORD i = 0; i < pixels_per_row; i++) last_row[i] = bg_rgb;
+    DWORD py = (total_rows - 1) * FONT_H;
+    for (DWORD row = 0; row < FONT_H; row++) {
+        for (DWORD x = 0; x < g_Con.Width; x++) {
+            _ConPutPixel(x, py + row, bg_rgb);
+        }
+    }
 
     g_Con.CursorRow = total_rows - 1;
 }

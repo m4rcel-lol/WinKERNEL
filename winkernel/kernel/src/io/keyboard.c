@@ -117,6 +117,8 @@ NTSTATUS IoConnectKeyboard(VOID) {
     HalPicUnmaskIrq(1);
     HalPicUnmaskIrq(2);
 
+    (VOID)IoRegisterLoadedDriver("PS/2 Keyboard (i8042prt)");
+
     return STATUS_SUCCESS;
 }
 

@@ -3,7 +3,9 @@
 #include <kernel/gfx.h>
 #include <kernel/terminal.h>
 #include <kernel/rtl.h>
+#include <kernel/io.h>
 #include <ntdef.h>
+#include <ntstatus.h>
 #include <limine.h>
 
 /* ── Limine framebuffer request (shared with terminal.c via separate req) ─ */
@@ -19,10 +21,25 @@ static volatile struct limine_framebuffer_request gfx_fb_request = {
 /* ── Driver state ───────────────────────────────────────────────────────── */
 static GFX_MODE g_Mode;
 static BOOL     g_Ready = FALSE;
+static BYTE*    g_FbBytes = NULL;
+
+static VOID _GfxPutPixel(DWORD X, DWORD Y, DWORD Rgb) {
+    if (!g_Ready || !g_FbBytes || X >= g_Mode.Width || Y >= g_Mode.Height) return;
+    BYTE* row = g_FbBytes + Y * g_Mode.Pitch;
+    if (g_Mode.Bpp == 32) {
+        ((DWORD*)row)[X] = Rgb;
+    } else if (g_Mode.Bpp == 24) {
+        BYTE* p = row + X * 3;
+        p[0] = (BYTE)(Rgb & 0xFF);
+        p[1] = (BYTE)((Rgb >> 8) & 0xFF);
+        p[2] = (BYTE)((Rgb >> 16) & 0xFF);
+    }
+}
 
 /* ── GfxInitialize ──────────────────────────────────────────────────────── */
 NTSTATUS GfxInitialize(VOID) {
     g_Ready = FALSE;
+    g_FbBytes = NULL;
 
     if (!gfx_fb_request.response ||
         gfx_fb_request.response->framebuffer_count == 0) {
@@ -30,12 +47,19 @@ NTSTATUS GfxInitialize(VOID) {
     }
 
     struct limine_framebuffer* fb = gfx_fb_request.response->framebuffers[0];
+    g_Mode.Bpp = (DWORD)fb->bpp;
+    if (g_Mode.Bpp != 32 && g_Mode.Bpp != 24) {
+        return STATUS_NOT_IMPLEMENTED;
+    }
+
+    g_FbBytes          = (BYTE*)fb->address;
     g_Mode.Framebuffer = (DWORD*)fb->address;
-    g_Mode.Width       = (DWORD)fb->width;
-    g_Mode.Height      = (DWORD)fb->height;
-    g_Mode.Pitch       = (DWORD)fb->pitch;
-    g_Mode.Bpp         = (DWORD)fb->bpp;
-    g_Ready            = TRUE;
+    g_Mode.Width        = (DWORD)fb->width;
+    g_Mode.Height       = (DWORD)fb->height;
+    g_Mode.Pitch        = (DWORD)fb->pitch;
+    g_Ready             = TRUE;
+
+    (VOID)IoRegisterLoadedDriver("Basic Framebuffer Display");
 
     return STATUS_SUCCESS;
 }
@@ -47,8 +71,7 @@ VOID GfxGetMode(PGFX_MODE Mode) {
 
 /* ── GfxDrawPixel ───────────────────────────────────────────────────────── */
 VOID GfxDrawPixel(DWORD X, DWORD Y, DWORD Color) {
-    if (!g_Ready || X >= g_Mode.Width || Y >= g_Mode.Height) return;
-    g_Mode.Framebuffer[Y * (g_Mode.Pitch / 4) + X] = Color;
+    _GfxPutPixel(X, Y, Color);
 }
 
 /* ── GfxFillRect ────────────────────────────────────────────────────────── */
@@ -56,10 +79,8 @@ VOID GfxFillRect(DWORD X, DWORD Y, DWORD W, DWORD H, DWORD Color) {
     if (!g_Ready) return;
     DWORD x2 = X + W; if (x2 > g_Mode.Width)  x2 = g_Mode.Width;
     DWORD y2 = Y + H; if (y2 > g_Mode.Height) y2 = g_Mode.Height;
-    DWORD stride = g_Mode.Pitch / 4;
     for (DWORD y = Y; y < y2; y++) {
-        DWORD* row = g_Mode.Framebuffer + y * stride + X;
-        for (DWORD x = 0; x < (x2 - X); x++) row[x] = Color;
+        for (DWORD x = X; x < x2; x++) _GfxPutPixel(x, y, Color);
     }
 }
 
@@ -76,11 +97,9 @@ VOID GfxDrawHLine(DWORD X, DWORD Y, DWORD Len, DWORD Color) {
 /* ── GfxDrawVLine ───────────────────────────────────────────────────────── */
 VOID GfxDrawVLine(DWORD X, DWORD Y, DWORD Len, DWORD Color) {
     if (!g_Ready) return;
-    DWORD stride = g_Mode.Pitch / 4;
     DWORD y2 = Y + Len; if (y2 > g_Mode.Height) y2 = g_Mode.Height;
     if (X >= g_Mode.Width) return;
-    for (DWORD y = Y; y < y2; y++)
-        g_Mode.Framebuffer[y * stride + X] = Color;
+    for (DWORD y = Y; y < y2; y++) _GfxPutPixel(X, y, Color);
 }
 
 /* ── GfxDrawRect ────────────────────────────────────────────────────────── */
@@ -94,31 +113,26 @@ VOID GfxDrawRect(DWORD X, DWORD Y, DWORD W, DWORD H, DWORD Color) {
 /* ── GfxBlit ────────────────────────────────────────────────────────────── */
 VOID GfxBlit(DWORD X, DWORD Y, DWORD W, DWORD H, const DWORD* Pixels) {
     if (!g_Ready || !Pixels) return;
-    DWORD stride = g_Mode.Pitch / 4;
     for (DWORD row = 0; row < H; row++) {
         DWORD dy = Y + row;
         if (dy >= g_Mode.Height) break;
         for (DWORD col = 0; col < W; col++) {
             DWORD dx = X + col;
             if (dx >= g_Mode.Width) break;
-            g_Mode.Framebuffer[dy * stride + dx] = Pixels[row * W + col];
+            _GfxPutPixel(dx, dy, Pixels[row * W + col]);
         }
     }
 }
 
 /* ── GfxScrollUp ────────────────────────────────────────────────────────── */
 VOID GfxScrollUp(DWORD Lines, DWORD BgColor) {
-    if (!g_Ready || Lines == 0) return;
-    DWORD stride = g_Mode.Pitch / 4;
+    if (!g_Ready || Lines == 0 || !g_FbBytes) return;
     if (Lines >= g_Mode.Height) {
         GfxFillScreen(BgColor);
         return;
     }
-    /* Move rows up */
     DWORD move_rows = g_Mode.Height - Lines;
-    RtlCopyMemory(g_Mode.Framebuffer,
-                  g_Mode.Framebuffer + Lines * stride,
-                  move_rows * stride * 4);
-    /* Clear bottom */
+    SIZE_T span = (SIZE_T)move_rows * g_Mode.Pitch;
+    RtlCopyMemory(g_FbBytes, g_FbBytes + (SIZE_T)Lines * g_Mode.Pitch, span);
     GfxFillRect(0, move_rows, g_Mode.Width, Lines, BgColor);
 }

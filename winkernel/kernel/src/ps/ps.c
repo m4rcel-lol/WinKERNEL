@@ -1,4 +1,4 @@
-/* WinKernel NTKRNL-X — Process Manager (kernel-mode stub, Phase 1) */
+/* WinKernel NTKRNL-X — Process Manager (single system process / thread) */
 
 #include <kernel/ps.h>
 #include <kernel/mm.h>
