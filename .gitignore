@@ -1,0 +1,21 @@
+# Build artifacts
+winkernel/build/
+winkernel/winkernel.iso
+winkernel/*.img
+
+# Vendored Limine: keep the binary blobs + host-tool source, but ignore the
+# locally-compiled host tool and any object files it produces.
+winkernel/limine/limine
+winkernel/limine/limine.exe
+winkernel/limine/*.o
+
+# Limine clone created by tools/setup.sh on Linux
+winkernel/limine_bin/
+
+# UEFI firmware images copied in locally for QEMU testing
+winkernel/OVMF.fd
+winkernel/OVMF_VARS.fd
+
+# Editor / OS noise
+.DS_Store
+*.swp
